@@ -1,0 +1,4 @@
+#version 320 es
+precision highp float;
+layout(early_fragment_tests) in;out vec4 color;
+void main(){color=vec4(1.);}

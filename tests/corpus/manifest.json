@@ -1,0 +1,4654 @@
+[
+  {
+    "name": "constructors",
+    "file": "constructors.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swizzles",
+    "file": "swizzles.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "trigonometry",
+    "file": "trigonometry.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "exponential",
+    "file": "exponential.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "clamp_mix",
+    "file": "clamp_mix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "smoothstep",
+    "file": "smoothstep.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "geometry",
+    "file": "geometry.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "dot_cross",
+    "file": "dot_cross.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "relational",
+    "file": "relational.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "matrix",
+    "file": "matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ternary",
+    "file": "ternary.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mod_fract",
+    "file": "mod_fract.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "reflect",
+    "file": "reflect.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pow",
+    "file": "pow.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "component_write",
+    "file": "component_write.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "for_loop",
+    "file": "for_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "nested_loops",
+    "file": "nested_loops.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "branches",
+    "file": "branches.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "early_return",
+    "file": "early_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "local_array",
+    "file": "local_array.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "integer_math",
+    "file": "integer_math.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "comments",
+    "file": "comments.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "numeric_exponent",
+    "file": "numeric_exponent.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "layout_zero",
+    "file": "layout_zero.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "helper",
+    "file": "helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform",
+    "file": "uniform.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "checker",
+    "file": "checker.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "varying",
+    "file": "varying.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "sampler",
+    "file": "sampler.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "depth",
+    "file": "depth.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "discard",
+    "file": "discard.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "location_one",
+    "file": "location_one.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "mrt",
+    "file": "mrt.frag",
+    "expect": "reject",
+    "diagnostic": "location",
+    "source_valid": true
+  },
+  {
+    "name": "fragcoord",
+    "file": "fragcoord.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "atomic",
+    "file": "atomic.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "sample_mask",
+    "file": "sample_mask.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "front_facing",
+    "file": "front_facing.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "sample_id",
+    "file": "sample_id.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "image_store",
+    "file": "image_store.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "storage",
+    "file": "storage.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "missing_main",
+    "file": "missing_main.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": false
+  },
+  {
+    "name": "struct",
+    "file": "struct.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "duplicate_main",
+    "file": "duplicate_main.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": false
+  },
+  {
+    "name": "unclosed_brace",
+    "file": "unclosed_brace.frag",
+    "expect": "reject",
+    "diagnostic": "Unclosed delimiter",
+    "source_valid": false
+  },
+  {
+    "name": "unterminated_comment",
+    "file": "unterminated_comment.frag",
+    "expect": "reject",
+    "diagnostic": "Unterminated comment",
+    "source_valid": false
+  },
+  {
+    "name": "define",
+    "file": "define.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "output_shadow",
+    "file": "output_shadow.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "nonsquare_matrix",
+    "file": "nonsquare_matrix.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "overload_prototype",
+    "file": "overload_prototype.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "parameter_qualifiers",
+    "file": "parameter_qualifiers.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "break_continue",
+    "file": "break_continue.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "generated_collision",
+    "file": "generated_collision.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "matrix_identifier",
+    "file": "matrix_identifier.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "gradient",
+    "file": "gradient.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lighting",
+    "file": "lighting.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "sdf_circle",
+    "file": "sdf_circle.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "color_transform",
+    "file": "color_transform.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "crlf",
+    "file": "crlf.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_for_uniform",
+    "file": "dynamic_for_uniform.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_for_start",
+    "file": "dynamic_for_start.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_for_step",
+    "file": "dynamic_for_step.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dependent_nested_loop",
+    "file": "dependent_nested_loop.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_while",
+    "file": "dynamic_while.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_do_while",
+    "file": "dynamic_do_while.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_array_index",
+    "file": "dynamic_array_index.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_vector_index",
+    "file": "dynamic_vector_index.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "switch_fallthrough",
+    "file": "switch_fallthrough.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "integer_bitwise",
+    "file": "integer_bitwise.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "dynamic_for_helper",
+    "file": "dynamic_for_helper.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "const_bound_control",
+    "file": "const_bound_control.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bounded_uniform_break",
+    "file": "bounded_uniform_break.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_read_after_write",
+    "file": "out_read_after_write.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "synthesized return local must be readable/modifiable",
+    "source_valid": true
+  },
+  {
+    "name": "out_written_in_helper",
+    "file": "out_written_in_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "out global becomes a local of main; helpers must receive it somehow",
+    "source_valid": true
+  },
+  {
+    "name": "out_passed_inout",
+    "file": "out_passed_inout.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_partial_swizzle_writes",
+    "file": "out_partial_swizzle_writes.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_name_is_coord",
+    "file": "out_name_is_coord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "collides with the wrapper parameter name float2 coord",
+    "source_valid": true
+  },
+  {
+    "name": "out_name_is_half4",
+    "file": "out_name_is_half4.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_name_sk_prefix",
+    "file": "out_name_sk_prefix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "sk_ identifiers are reserved in SkSL",
+    "source_valid": true
+  },
+  {
+    "name": "out_highp_qualifier",
+    "file": "out_highp_qualifier.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_qualifier_order",
+    "file": "out_qualifier_order.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_lowp",
+    "file": "out_lowp.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "lowp output vs half4 return",
+    "source_valid": true
+  },
+  {
+    "name": "out_invariant",
+    "file": "out_invariant.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_array",
+    "file": "out_array.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "out_ivec4",
+    "file": "out_ivec4.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "out_vec3",
+    "file": "out_vec3.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "decision: widen to half4(c,1) or refuse",
+    "source_valid": true
+  },
+  {
+    "name": "out_vec2",
+    "file": "out_vec2.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "out_float",
+    "file": "out_float.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "out_struct",
+    "file": "out_struct.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "output variables cannot be structs"
+  },
+  {
+    "name": "out_missing",
+    "file": "out_missing.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "no output variable declared at all: ambiguous result",
+    "source_valid": true
+  },
+  {
+    "name": "out_empty_main",
+    "file": "out_empty_main.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "output never written: return value must still be defined",
+    "source_valid": true
+  },
+  {
+    "name": "out_conditional_only",
+    "file": "out_conditional_only.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_written_in_loop",
+    "file": "out_written_in_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_return_in_nested_loop",
+    "file": "out_return_in_nested_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "every `return;` must become `return color;`",
+    "source_valid": true
+  },
+  {
+    "name": "out_return_in_else_chain",
+    "file": "out_return_in_else_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_compound_ops",
+    "file": "out_compound_ops.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_chained_assign",
+    "file": "out_chained_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_used_as_scratch_arg",
+    "file": "out_used_as_scratch_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "out_name_and_local_same_in_helper",
+    "file": "out_name_and_local_same_in_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_sksl_type_names",
+    "file": "ident_sksl_type_names.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_sksl_half_family",
+    "file": "ident_sksl_half_family.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_sksl_object_names",
+    "file": "ident_sksl_object_names.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL reserved effect-type names",
+    "source_valid": true
+  },
+  {
+    "name": "ident_sk_prefix",
+    "file": "ident_sk_prefix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "sk_ is reserved in SkSL but legal in GLSL; must rename",
+    "source_valid": true
+  },
+  {
+    "name": "ident_function_named_float4",
+    "file": "ident_function_named_float4.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_user_function_saturate",
+    "file": "ident_user_function_saturate.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "saturate is an SkSL builtin, not a GLSL one",
+    "source_valid": true
+  },
+  {
+    "name": "ident_user_function_unpremul",
+    "file": "ident_user_function_unpremul.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_substring_types",
+    "file": "ident_substring_types.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_type_prefix_vars",
+    "file": "ident_type_prefix_vars.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_swizzle_like_names",
+    "file": "ident_swizzle_like_names.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_case_variants",
+    "file": "ident_case_variants.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_underscores",
+    "file": "ident_underscores.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_double_underscore",
+    "file": "ident_double_underscore.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "reserved but allowed in GLSL ES 3.x; translated with a warning",
+    "source_valid": true
+  },
+  {
+    "name": "ident_gl_prefix",
+    "file": "ident_gl_prefix.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "ident_reserved_half",
+    "file": "ident_reserved_half.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "half is reserved in GLSL ES but a type in SkSL"
+  },
+  {
+    "name": "ident_reserved_inline",
+    "file": "ident_reserved_inline.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "ident_reserved_long",
+    "file": "ident_reserved_long.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "ident_very_long",
+    "file": "ident_very_long.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_struct_named_like_sksl_type",
+    "file": "ident_struct_named_like_sksl_type.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_struct_member_named_like_type",
+    "file": "ident_struct_member_named_like_type.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "member `half` reserved"
+  },
+  {
+    "name": "ident_struct_member_swizzle_names",
+    "file": "ident_struct_member_swizzle_names.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_variable_shadows_function",
+    "file": "ident_variable_shadows_function.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_variable_shadows_struct",
+    "file": "ident_variable_shadows_struct.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_variable_named_main",
+    "file": "ident_variable_named_main.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_param_named_coord",
+    "file": "ident_param_named_coord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_uniform_named_coord",
+    "file": "ident_uniform_named_coord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_local_named_coord",
+    "file": "ident_local_named_coord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_user_global_float2_collision",
+    "file": "ident_user_global_float2_collision.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_utf8_in_comment",
+    "file": "ident_utf8_in_comment.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_non_ascii",
+    "file": "ident_non_ascii.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_float_forms",
+    "file": "lit_float_forms.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_float_f_suffix",
+    "file": "lit_float_f_suffix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES 3.x allows f/F; SkSL does not",
+    "source_valid": true
+  },
+  {
+    "name": "lit_float_lf_suffix",
+    "file": "lit_float_lf_suffix.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_int_hex",
+    "file": "lit_int_hex.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_int_octal",
+    "file": "lit_int_octal.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "010 == 8 in GLSL; SkSL has no octal so naive copy changes meaning",
+    "source_valid": true
+  },
+  {
+    "name": "lit_int_bad_octal",
+    "file": "lit_int_bad_octal.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_int_overflow",
+    "file": "lit_int_overflow.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "GLSL ES 3.00 keeps the 32-bit pattern: the value is -2147483648",
+    "source_valid": true
+  },
+  {
+    "name": "lit_int_max",
+    "file": "lit_int_max.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_int_min_expr",
+    "file": "lit_int_min_expr.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint",
+    "file": "lit_uint.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "uint not available in the ES2 profile: refuse or lower",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_hex",
+    "file": "lit_uint_hex.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uvec",
+    "file": "lit_uvec.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "lit_double",
+    "file": "lit_double.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_bool",
+    "file": "lit_bool.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_int_to_float_implicit",
+    "file": "lit_int_to_float_implicit.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "ES has no implicit int->float; must not be silently fixed"
+  },
+  {
+    "name": "lit_int_to_float_arg",
+    "file": "lit_int_to_float_arg.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_float_to_int_implicit",
+    "file": "lit_float_to_int_implicit.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_float_overflow_half",
+    "file": "lit_float_overflow_half.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "semantic: half saturates at 65504",
+    "source_valid": true
+  },
+  {
+    "name": "conv_float_to_int_trunc",
+    "file": "conv_float_to_int_trunc.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_bool",
+    "file": "conv_bool.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_mix",
+    "file": "conv_vec_ctor_mix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_all_forms",
+    "file": "conv_vec_ctor_all_forms.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_extra_args",
+    "file": "conv_vec_ctor_extra_args.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_too_many",
+    "file": "conv_vec_ctor_too_many.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "conv_vec_ctor_too_few",
+    "file": "conv_vec_ctor_too_few.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "precision_locals",
+    "file": "precision_locals.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "precision_params_return",
+    "file": "precision_params_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "precision_struct_members",
+    "file": "precision_struct_members.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "precision_mixed_arith",
+    "file": "precision_mixed_arith.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "half*float promotion rules",
+    "source_valid": true
+  },
+  {
+    "name": "precision_mixed_vec_ctor",
+    "file": "precision_mixed_vec_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "precision_int",
+    "file": "precision_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "precision_statement_int",
+    "file": "precision_statement_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bool_vectors",
+    "file": "bool_vectors.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bool_vec_compare",
+    "file": "bool_vec_compare.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bool_ops_nonshort",
+    "file": "bool_ops_nonshort.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_comma",
+    "file": "op_comma.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_comma_in_for",
+    "file": "op_comma_in_for.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_nested_right",
+    "file": "op_ternary_nested_right.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_nested_left",
+    "file": "op_ternary_nested_left.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_chain_assign",
+    "file": "op_ternary_chain_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "assignment inside ternary branches; precedence of ?: vs =",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_side_effects",
+    "file": "op_ternary_side_effects.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "only one branch may run",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_vec_cond",
+    "file": "op_ternary_vec_cond.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_lvalue",
+    "file": "op_ternary_lvalue.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_ternary_struct",
+    "file": "op_ternary_struct.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_short_circuit_side_effects",
+    "file": "op_short_circuit_side_effects.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "right operand must not run when short-circuited",
+    "source_valid": true
+  },
+  {
+    "name": "op_unary_adjacent",
+    "file": "op_unary_adjacent.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "`- -x` must never collapse to `--x`",
+    "source_valid": true
+  },
+  {
+    "name": "op_postfix_ambiguous",
+    "file": "op_postfix_ambiguous.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "maximal munch: a++ + b",
+    "source_valid": true
+  },
+  {
+    "name": "op_negate_literal_spacing",
+    "file": "op_negate_literal_spacing.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "`a--.5` lexes as a-- .5"
+  },
+  {
+    "name": "op_not_chain",
+    "file": "op_not_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_bitnot",
+    "file": "op_bitnot.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "bitwise ops absent from ES2 profile",
+    "source_valid": true
+  },
+  {
+    "name": "op_shift_precedence",
+    "file": "op_shift_precedence.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_bitwise_precedence",
+    "file": "op_bitwise_precedence.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_compound_int",
+    "file": "op_compound_int.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "op_mod_int",
+    "file": "op_mod_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "% missing in ES2 profile: lower to a - b*(a/b) for ints",
+    "source_valid": true
+  },
+  {
+    "name": "op_mod_int_vector",
+    "file": "op_mod_int_vector.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_mod_float_invalid",
+    "file": "op_mod_float_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_assign_chain",
+    "file": "op_assign_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_assign_expression",
+    "file": "op_assign_expression.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_assign_in_condition",
+    "file": "op_assign_in_condition.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_increment_vector",
+    "file": "op_increment_vector.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_increment_in_index",
+    "file": "op_increment_in_index.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "op_increment_float",
+    "file": "op_increment_float.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_vec_scalar_arith",
+    "file": "op_vec_scalar_arith.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_vec_compound_scalar",
+    "file": "op_vec_compound_scalar.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_int_vec_arith",
+    "file": "op_int_vec_arith.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_precedence_mix",
+    "file": "op_precedence_mix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_precedence_parens_dropped",
+    "file": "op_precedence_parens_dropped.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "emitter must not drop parentheses",
+    "source_valid": true
+  },
+  {
+    "name": "op_precedence_neg_pow",
+    "file": "op_precedence_neg_pow.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_comparison_chain_invalid",
+    "file": "op_comparison_chain_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_vec_equality",
+    "file": "op_vec_equality.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_struct_equality",
+    "file": "op_struct_equality.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL struct comparison support is limited",
+    "source_valid": true
+  },
+  {
+    "name": "op_array_length",
+    "file": "op_array_length.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_chain",
+    "file": "swz_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_on_rvalue",
+    "file": "swz_on_rvalue.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_on_ctor",
+    "file": "swz_on_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_on_ternary",
+    "file": "swz_on_ternary.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_stpq",
+    "file": "swz_stpq.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_mixed_sets_invalid",
+    "file": "swz_mixed_sets_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "swz_out_of_range_invalid",
+    "file": "swz_out_of_range_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "swz_repeat_assign_invalid",
+    "file": "swz_repeat_assign_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "swz_swap_assign",
+    "file": "swz_swap_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "swap via swizzle lvalue: needs temp",
+    "source_valid": true
+  },
+  {
+    "name": "swz_assign_self_overlap",
+    "file": "swz_assign_self_overlap.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_compound",
+    "file": "swz_compound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_scalar_member",
+    "file": "swz_scalar_member.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_int_vec",
+    "file": "swz_int_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_bool_vec",
+    "file": "swz_bool_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_as_out_arg",
+    "file": "swz_as_out_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "swz_as_inout_arg_reversed",
+    "file": "swz_as_inout_arg_reversed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "swizzle lvalue passed as inout: copy-in/copy-out order matters",
+    "source_valid": true
+  },
+  {
+    "name": "swz_as_out_arg_repeat_invalid",
+    "file": "swz_as_out_arg_repeat_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "mat_ctor_layout",
+    "file": "mat_ctor_layout.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "column-major construction; asymmetric on purpose",
+    "source_valid": true
+  },
+  {
+    "name": "mat_from_vectors",
+    "file": "mat_from_vectors.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_from_scalars_mixed",
+    "file": "mat_from_scalars_mixed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "constructor args do not align with columns",
+    "source_valid": true
+  },
+  {
+    "name": "mat_from_larger",
+    "file": "mat_from_larger.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_from_smaller",
+    "file": "mat_from_smaller.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "remaining entries come from identity",
+    "source_valid": true
+  },
+  {
+    "name": "mat_diagonal",
+    "file": "mat_diagonal.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_column_assign",
+    "file": "mat_column_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_dynamic_column_in_loop",
+    "file": "mat_dynamic_column_in_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_compound",
+    "file": "mat_compound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_vec_order",
+    "file": "mat_vec_order.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "M*v and v*M differ",
+    "source_valid": true
+  },
+  {
+    "name": "mat_mat_product",
+    "file": "mat_mat_product.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_negate_scalar",
+    "file": "mat_negate_scalar.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_compmult",
+    "file": "mat_compmult.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_transpose",
+    "file": "mat_transpose.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtin; lowering required",
+    "source_valid": true
+  },
+  {
+    "name": "mat_determinant",
+    "file": "mat_determinant.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtin; lowering required",
+    "source_valid": true
+  },
+  {
+    "name": "mat_inverse",
+    "file": "mat_inverse.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtin; lowering required",
+    "source_valid": true
+  },
+  {
+    "name": "mat_outer_product",
+    "file": "mat_outer_product.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtin; lowering required",
+    "source_valid": true
+  },
+  {
+    "name": "mat_explicit_square_names",
+    "file": "mat_explicit_square_names.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_nonsquare_2x3",
+    "file": "mat_nonsquare_2x3.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "mat_nonsquare_4x2_product",
+    "file": "mat_nonsquare_4x2_product.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "mat_index_oob_const",
+    "file": "mat_index_oob_const.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "mat_uniform_use",
+    "file": "mat_uniform_use.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_uniform_mat4_columns",
+    "file": "mat_uniform_mat4_columns.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_typed",
+    "file": "arr_ctor_typed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_unsized_ctor",
+    "file": "arr_ctor_unsized_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_type_style_decl",
+    "file": "arr_type_style_decl.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "declarator on the type, not the name",
+    "source_valid": true
+  },
+  {
+    "name": "arr_type_style_unsized_init",
+    "file": "arr_type_style_unsized_init.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_multi_decl_mixed",
+    "file": "arr_multi_decl_mixed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_multi_decl_type_style",
+    "file": "arr_multi_decl_type_style.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_vec_elements",
+    "file": "arr_vec_elements.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_of_struct",
+    "file": "arr_of_struct.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_struct_member_array",
+    "file": "arr_struct_member_array.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_assign_copy",
+    "file": "arr_assign_copy.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "array assignment copies",
+    "source_valid": true
+  },
+  {
+    "name": "arr_pass_by_value",
+    "file": "arr_pass_by_value.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "callee mutation must not leak",
+    "source_valid": true
+  },
+  {
+    "name": "arr_pass_type_style",
+    "file": "arr_pass_type_style.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_inout",
+    "file": "arr_inout.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_return",
+    "file": "arr_return.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "array-returning functions: lower or refuse (decision)",
+    "source_valid": true
+  },
+  {
+    "name": "arr_of_arrays",
+    "file": "arr_of_arrays.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "arr_of_arrays_ctor",
+    "file": "arr_of_arrays_ctor.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "arr_const_oob",
+    "file": "arr_const_oob.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "arr_negative_index",
+    "file": "arr_negative_index.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "arr_zero_size",
+    "file": "arr_zero_size.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "arr_size_const_expr",
+    "file": "arr_size_const_expr.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_size_from_float_invalid",
+    "file": "arr_size_from_float_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "arr_loop_fill_sum",
+    "file": "arr_loop_fill_sum.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_global_mutated",
+    "file": "arr_global_mutated.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_global_const",
+    "file": "arr_global_const.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_const_vec_array",
+    "file": "arr_const_vec_array.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_index_by_expr",
+    "file": "arr_index_by_expr.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "non-constant index expression outside a loop var",
+    "source_valid": true
+  },
+  {
+    "name": "arr_index_by_array_elem",
+    "file": "arr_index_by_array_elem.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "index is itself an array read",
+    "source_valid": true
+  },
+  {
+    "name": "arr_index_by_vec_comp",
+    "file": "arr_index_by_vec_comp.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "struct_decl_and_var",
+    "file": "struct_decl_and_var.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_local_decl",
+    "file": "struct_local_decl.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_ctor_nested",
+    "file": "struct_ctor_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_nested_assign",
+    "file": "struct_nested_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_param_return",
+    "file": "struct_param_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_inout_param",
+    "file": "struct_inout_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_copy_semantics",
+    "file": "struct_copy_semantics.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_in_struct_ctor",
+    "file": "struct_array_in_struct_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_with_matrix",
+    "file": "struct_with_matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_with_bool_int",
+    "file": "struct_with_bool_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_empty",
+    "file": "struct_empty.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_member_init_invalid",
+    "file": "struct_member_init_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_recursive_invalid",
+    "file": "struct_recursive_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_redefined_invalid",
+    "file": "struct_redefined_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_ctor_wrong_args_invalid",
+    "file": "struct_ctor_wrong_args_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_ctor_scalar_into_vec_invalid",
+    "file": "struct_ctor_scalar_into_vec_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "struct ctor does not broadcast"
+  },
+  {
+    "name": "struct_forward_use_invalid",
+    "file": "struct_forward_use_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_global_mutated_by_helper",
+    "file": "struct_global_mutated_by_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_uniform",
+    "file": "struct_uniform.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "struct uniforms: flatten or refuse (decision)",
+    "source_valid": true
+  },
+  {
+    "name": "scope_shadow_nested",
+    "file": "scope_shadow_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_shadow_after_use",
+    "file": "scope_shadow_after_use.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_self_reference_init",
+    "file": "scope_self_reference_init.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "inner x is declared after its initializer: initializer sees the OUTER x",
+    "source_valid": true
+  },
+  {
+    "name": "scope_shadow_param",
+    "file": "scope_shadow_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "declaring in a nested block shadows the parameter",
+    "source_valid": true
+  },
+  {
+    "name": "scope_param_redeclared_invalid",
+    "file": "scope_param_redeclared_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "scope_redeclared_invalid",
+    "file": "scope_redeclared_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "scope_for_var_leaks_invalid",
+    "file": "scope_for_var_leaks_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "scope_for_var_shadow",
+    "file": "scope_for_var_shadow.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_same_name_sibling_loops",
+    "file": "scope_same_name_sibling_loops.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_decl_in_if_body",
+    "file": "scope_decl_in_if_body.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_bare_blocks",
+    "file": "scope_bare_blocks.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_use_before_decl_invalid",
+    "file": "scope_use_before_decl_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "scope_global_shadowed_by_local",
+    "file": "scope_global_shadowed_by_local.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_uniform_shadowed",
+    "file": "scope_uniform_shadowed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_global_ctor_chain",
+    "file": "const_global_ctor_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_global_dependent",
+    "file": "const_global_dependent.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_global_int_float",
+    "file": "const_global_int_float.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_local",
+    "file": "const_local.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_from_uniform_invalid",
+    "file": "const_from_uniform_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "const_from_user_fn_invalid",
+    "file": "const_from_user_fn_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "const_assign_invalid",
+    "file": "const_assign_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "const_uninit_invalid",
+    "file": "const_uninit_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "const_param",
+    "file": "const_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "const_param_write_invalid",
+    "file": "const_param_write_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "const_array_index_ctor",
+    "file": "const_array_index_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_init_builtin_call",
+    "file": "global_init_builtin_call.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_init_uniform_invalid",
+    "file": "global_init_uniform_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "global_mutated_by_helper",
+    "file": "global_mutated_by_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL has no mutable globals: must be threaded or hoisted",
+    "source_valid": true
+  },
+  {
+    "name": "global_mutated_order",
+    "file": "global_mutated_order.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_vec_component_write",
+    "file": "global_vec_component_write.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_multi_decl",
+    "file": "global_multi_decl.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_uninitialised_read",
+    "file": "global_uninitialised_read.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "global_matrix",
+    "file": "global_matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "multi_decl_dependent",
+    "file": "multi_decl_dependent.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "multi_decl_vec",
+    "file": "multi_decl_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_multi_decl",
+    "file": "uniform_multi_decl.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_int_vec",
+    "file": "uniform_int_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_precision_variants",
+    "file": "uniform_precision_variants.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_array_const_index",
+    "file": "uniform_array_const_index.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_array_loop_index",
+    "file": "uniform_array_loop_index.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_array_dynamic_index",
+    "file": "uniform_array_dynamic_index.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_array_length",
+    "file": "uniform_array_length.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_initialised_invalid",
+    "file": "uniform_initialised_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "uniform_uint",
+    "file": "uniform_uint.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_bool",
+    "file": "uniform_bool.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "SkSL runtime uniforms have no bool: lower to int/float or refuse (decision)",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_block_anonymous",
+    "file": "uniform_block_anonymous.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "block members become plain uniforms",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_block_named",
+    "file": "uniform_block_named.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_block_binding",
+    "file": "uniform_block_binding.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_block_array_instance",
+    "file": "uniform_block_array_instance.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_block_mat_rowmajor",
+    "file": "uniform_block_mat_rowmajor.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "row_major changes semantics; refuse",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_sampler_in_struct",
+    "file": "uniform_sampler_in_struct.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_unused_only",
+    "file": "uniform_unused_only.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uniform_name_collision_with_helper",
+    "file": "uniform_name_collision_with_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "qual_flat_in",
+    "file": "qual_flat_in.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_smooth_in",
+    "file": "qual_smooth_in.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_centroid_in",
+    "file": "qual_centroid_in.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_noperspective_in",
+    "file": "qual_noperspective_in.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "not in ES 3.2 core"
+  },
+  {
+    "name": "qual_early_fragment_tests",
+    "file": "qual_early_fragment_tests.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "no depth or stencil test in runtime shaders, so it has no observable effect",
+    "source_valid": true
+  },
+  {
+    "name": "qual_layout_origin",
+    "file": "qual_layout_origin.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_precise",
+    "file": "qual_precise.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "no equivalent in SkSL: drop or refuse",
+    "source_valid": true
+  },
+  {
+    "name": "qual_coherent_volatile",
+    "file": "qual_coherent_volatile.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_shared",
+    "file": "qual_shared.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_attribute_keyword",
+    "file": "qual_attribute_keyword.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_varying_keyword",
+    "file": "qual_varying_keyword.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_inout_global_invalid",
+    "file": "qual_inout_global_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "qual_buffer_unsized_array",
+    "file": "qual_buffer_unsized_array.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_buffer_readonly",
+    "file": "qual_buffer_readonly.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_image_size",
+    "file": "qual_image_size.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_image_atomic",
+    "file": "qual_image_atomic.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_const_in_out_combo_invalid",
+    "file": "qual_const_in_out_combo_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_if_no_braces_chain",
+    "file": "cf_if_no_braces_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_dangling_else",
+    "file": "cf_dangling_else.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "else binds to inner if",
+    "source_valid": true
+  },
+  {
+    "name": "cf_empty_statements",
+    "file": "cf_empty_statements.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_empty_if_body",
+    "file": "cf_empty_if_body.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_empty_block_bodies",
+    "file": "cf_empty_block_bodies.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_empty_body_semicolon",
+    "file": "cf_for_empty_body_semicolon.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_init_outside",
+    "file": "cf_for_init_outside.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "no declaration in init; SkSL loop unroller wants one",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_no_cond_break",
+    "file": "cf_for_no_cond_break.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_no_increment",
+    "file": "cf_for_no_increment.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_multi_init",
+    "file": "cf_for_multi_init.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_float_counter",
+    "file": "cf_for_float_counter.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_float_dynamic_end",
+    "file": "cf_for_float_dynamic_end.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counts_down",
+    "file": "cf_for_counts_down.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_step_two",
+    "file": "cf_for_step_two.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_cond_le_ge",
+    "file": "cf_for_cond_le_ge.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_cond_ne",
+    "file": "cf_for_cond_ne.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "!= conditions are not unrollable",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counter_modified_in_body",
+    "file": "cf_for_counter_modified_in_body.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counter_read_in_body",
+    "file": "cf_for_counter_read_in_body.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counter_as_array_index",
+    "file": "cf_for_counter_as_array_index.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_zero_trip",
+    "file": "cf_for_zero_trip.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_one_trip",
+    "file": "cf_for_one_trip.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_large_trip_count",
+    "file": "cf_for_large_trip_count.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL unrolls: may hit complexity limits",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_triple_nest",
+    "file": "cf_for_triple_nest.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_shadowed_counter_nested",
+    "file": "cf_for_shadowed_counter_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_return_inside",
+    "file": "cf_for_return_inside.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_continue_in_nested",
+    "file": "cf_for_continue_in_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_break_in_nested_only_inner",
+    "file": "cf_for_break_in_nested_only_inner.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_with_discard_free_early_exit",
+    "file": "cf_for_with_discard_free_early_exit.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_const_break",
+    "file": "cf_while_const_break.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_false",
+    "file": "cf_while_false.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_do_while_once",
+    "file": "cf_do_while_once.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_do_while_continue",
+    "file": "cf_do_while_continue.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "continue jumps to the condition",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_decl_in_cond",
+    "file": "cf_while_decl_in_cond.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "declaration in condition",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_if_decl_in_cond_invalid",
+    "file": "cf_if_decl_in_cond_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_condition_not_bool_invalid",
+    "file": "cf_condition_not_bool_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_condition_vec_bool_invalid",
+    "file": "cf_condition_vec_bool_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_break_outside_loop_invalid",
+    "file": "cf_break_outside_loop_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_continue_outside_loop_invalid",
+    "file": "cf_continue_outside_loop_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_code_after_return",
+    "file": "cf_code_after_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_code_after_break",
+    "file": "cf_code_after_break.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_return_value_in_void_invalid",
+    "file": "cf_return_value_in_void_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_discard_in_if",
+    "file": "cf_discard_in_if.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_discard_in_helper",
+    "file": "cf_discard_in_helper.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_discard_in_dead_branch",
+    "file": "cf_discard_in_dead_branch.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_basic",
+    "file": "cf_switch_basic.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_constant_selector",
+    "file": "cf_switch_constant_selector.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_default_middle",
+    "file": "cf_switch_default_middle.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "default in the middle participates in fallthrough",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_only_default",
+    "file": "cf_switch_only_default.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_empty",
+    "file": "cf_switch_empty.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_no_default_nomatch",
+    "file": "cf_switch_no_default_nomatch.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_stacked_labels",
+    "file": "cf_switch_stacked_labels.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_case_const_expr",
+    "file": "cf_switch_case_const_expr.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_negative_case",
+    "file": "cf_switch_negative_case.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_break_in_loop_in_switch",
+    "file": "cf_switch_break_in_loop_in_switch.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "inner break leaves the loop, not the switch",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_continue_in_loop",
+    "file": "cf_switch_continue_in_loop.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "continue inside switch targets the enclosing loop",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_break_in_switch_in_loop",
+    "file": "cf_switch_break_in_switch_in_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "break exits only the switch",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_nested",
+    "file": "cf_switch_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_return_in_case",
+    "file": "cf_switch_return_in_case.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_scoped_decl_in_braces",
+    "file": "cf_switch_scoped_decl_in_braces.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_duplicate_case_invalid",
+    "file": "cf_switch_duplicate_case_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_duplicate_default_invalid",
+    "file": "cf_switch_duplicate_default_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_float_selector_invalid",
+    "file": "cf_switch_float_selector_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_nonconst_label_invalid",
+    "file": "cf_switch_nonconst_label_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_uint_selector",
+    "file": "cf_switch_uint_selector.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_case_outside_switch_invalid",
+    "file": "cf_case_outside_switch_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_goto_invalid",
+    "file": "cf_goto_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_overload_by_type",
+    "file": "fn_overload_by_type.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL overloads need mangling-free resolution; int vs float literal matters",
+    "source_valid": true
+  },
+  {
+    "name": "fn_overload_mat_vec",
+    "file": "fn_overload_mat_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_overload_bool_int",
+    "file": "fn_overload_bool_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_overload_array_sizes",
+    "file": "fn_overload_array_sizes.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_overload_by_return_invalid",
+    "file": "fn_overload_by_return_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_overload_ambiguous_invalid",
+    "file": "fn_overload_ambiguous_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_prototype_unused",
+    "file": "fn_prototype_unused.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_prototype_called_undefined_invalid",
+    "file": "fn_prototype_called_undefined_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "glslang link-level error"
+  },
+  {
+    "name": "fn_prototype_before_and_def_after_main",
+    "file": "fn_prototype_before_and_def_after_main.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_prototype_repeated",
+    "file": "fn_prototype_repeated.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_prototype_qualifier_mismatch_invalid",
+    "file": "fn_prototype_qualifier_mismatch_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_use_before_decl_invalid",
+    "file": "fn_use_before_decl_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_definition_order_dependent",
+    "file": "fn_definition_order_dependent.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_unnamed_param",
+    "file": "fn_unnamed_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_void_param",
+    "file": "fn_void_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_void_return_early",
+    "file": "fn_void_return_early.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_many_params",
+    "file": "fn_many_params.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_nested_calls",
+    "file": "fn_nested_calls.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_param_modified_locally",
+    "file": "fn_param_modified_locally.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "in params are copies",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_param_uninitialised",
+    "file": "fn_out_param_uninitialised.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_param_not_written",
+    "file": "fn_out_param_not_written.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "out param left unwritten: value undefined, but must compile",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_array_elem",
+    "file": "fn_out_array_elem.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_array_dynamic_elem",
+    "file": "fn_out_array_dynamic_elem.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_struct_field",
+    "file": "fn_out_struct_field.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_matrix_column",
+    "file": "fn_out_matrix_column.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_out_global",
+    "file": "fn_out_global.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "aliasing a global with an out param",
+    "source_valid": true
+  },
+  {
+    "name": "fn_inout_aliased_args",
+    "file": "fn_inout_aliased_args.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "result is undefined by spec but must compile",
+    "source_valid": true
+  },
+  {
+    "name": "fn_in_arg_expression_with_sideeffect",
+    "file": "fn_in_arg_expression_with_sideeffect.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_const_arg_to_out_invalid",
+    "file": "fn_const_arg_to_out_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_swizzle_dup_to_out_invalid",
+    "file": "fn_swizzle_dup_to_out_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_returns_struct_member_chain",
+    "file": "fn_returns_struct_member_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_returns_vec_swizzle_assign_invalid",
+    "file": "fn_returns_vec_swizzle_assign_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_recursion_direct_invalid",
+    "file": "fn_recursion_direct_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_recursion_mutual_invalid",
+    "file": "fn_recursion_mutual_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_called_invalid",
+    "file": "fn_main_called_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_with_params_invalid",
+    "file": "fn_main_with_params_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_returns_invalid",
+    "file": "fn_main_returns_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_prototype_first",
+    "file": "fn_main_prototype_first.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_main_prototype_only",
+    "file": "fn_main_prototype_only.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_not_last",
+    "file": "fn_main_not_last.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_main_in_middle",
+    "file": "fn_main_in_middle.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_main_overloaded",
+    "file": "fn_main_overloaded.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_returns_array_element_chain",
+    "file": "fn_returns_array_element_chain.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "fn_returns_bool_vec",
+    "file": "fn_returns_bool_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_returns_matrix",
+    "file": "fn_returns_matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_returns_int_used_as_float",
+    "file": "fn_returns_int_used_as_float.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_name_same_as_type_in_sksl",
+    "file": "fn_name_same_as_type_in_sksl.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_long_chain_30",
+    "file": "fn_long_chain_30.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_scalar_overloads",
+    "file": "bi_scalar_overloads.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_vec_scalar_mixed",
+    "file": "bi_vec_scalar_mixed.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_step_smoothstep_scalar_edge",
+    "file": "bi_step_smoothstep_scalar_edge.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mix_forms",
+    "file": "bi_mix_forms.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mix_bool_select",
+    "file": "bi_mix_bool_select.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES 3.0 mix(genType,genType,genBType): lowering required",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mix_int_select",
+    "file": "bi_mix_int_select.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_clamp_int",
+    "file": "bi_clamp_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_min_max_int",
+    "file": "bi_min_max_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_abs_sign_int",
+    "file": "bi_abs_sign_int.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_abs_sign_float",
+    "file": "bi_abs_sign_float.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_rounding_family",
+    "file": "bi_rounding_family.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "round/trunc are ES3 builtins",
+    "source_valid": true
+  },
+  {
+    "name": "bi_round_even",
+    "file": "bi_round_even.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "replaced by an exact SkSL helper",
+    "source_valid": true
+  },
+  {
+    "name": "bi_fract_negative",
+    "file": "bi_fract_negative.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mod_negative",
+    "file": "bi_mod_negative.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "mod = x - y*floor(x/y)",
+    "source_valid": true
+  },
+  {
+    "name": "bi_modf",
+    "file": "bi_modf.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtin with out param",
+    "source_valid": true
+  },
+  {
+    "name": "bi_isnan_isinf",
+    "file": "bi_isnan_isinf.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "ES3 builtins",
+    "source_valid": true
+  },
+  {
+    "name": "bi_exp_log_family",
+    "file": "bi_exp_log_family.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_pow_vec",
+    "file": "bi_pow_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_trig_inverse",
+    "file": "bi_trig_inverse.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_atan2_arg_order",
+    "file": "bi_atan2_arg_order.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "atan(y,x) quadrant behaviour",
+    "source_valid": true
+  },
+  {
+    "name": "bi_radians_degrees",
+    "file": "bi_radians_degrees.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_hyperbolic",
+    "file": "bi_hyperbolic.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "ES3 builtins; SkSL support partial",
+    "source_valid": true
+  },
+  {
+    "name": "bi_inverse_hyperbolic",
+    "file": "bi_inverse_hyperbolic.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_faceforward_refract",
+    "file": "bi_faceforward_refract.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_relational_vec_families",
+    "file": "bi_relational_vec_families.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_relational_equal_notequal",
+    "file": "bi_relational_equal_notequal.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_int_relational",
+    "file": "bi_int_relational.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_matrixcompmult_vs_star",
+    "file": "bi_matrixcompmult_vs_star.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_cross_dot_distance",
+    "file": "bi_cross_dot_distance.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_normalize_length",
+    "file": "bi_normalize_length.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_reflect_refract",
+    "file": "bi_reflect_refract.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_family",
+    "file": "bi_dfdx_family.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "derivatives are computed in software from the 2x2 quad",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_fragcoord",
+    "file": "bi_dfdx_fragcoord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "software derivatives of a function of gl_FragCoord",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_after_pixel_return",
+    "file": "bi_dfdx_after_pixel_return.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "derivative after a pixel-dependent return is undefined in GLSL",
+    "source_valid": true
+  },
+  {
+    "name": "bi_fragcoord_z",
+    "file": "bi_fragcoord_z.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits",
+    "file": "bi_float_bits.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_uint",
+    "file": "bi_float_bits_uint.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_pack_unpack",
+    "file": "bi_pack_unpack.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_pack_unorm",
+    "file": "bi_pack_unorm.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_bit_ops",
+    "file": "bi_bit_ops.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_bitfield",
+    "file": "bi_bitfield.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_fma_frexp",
+    "file": "bi_fma_frexp.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "frexp is valid GLSL ES 3.10+, but SkSL has no bit-level access",
+    "source_valid": true
+  },
+  {
+    "name": "bi_fma",
+    "file": "bi_fma.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "replaced by an exact SkSL helper",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_without_sampler_invalid",
+    "file": "bi_texture_without_sampler_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_texelfetch",
+    "file": "bi_texelfetch.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_size",
+    "file": "bi_texture_size.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture2d_legacy_invalid",
+    "file": "bi_texture2d_legacy_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_sampler_as_param",
+    "file": "bi_sampler_as_param.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_sampler_array",
+    "file": "bi_sampler_array.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_sampler2dshadow",
+    "file": "bi_sampler2dshadow.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_sampler_2d_array_ms",
+    "file": "bi_sampler_2d_array_ms.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_FragColor_in_320_invalid",
+    "file": "bi_gl_FragColor_in_320_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_gl_FragData_in_320_invalid",
+    "file": "bi_gl_FragData_in_320_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_gl_FragCoord_xy",
+    "file": "bi_gl_FragCoord_xy.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "maps to coord; origin flip (bottom-left GL vs top-left Skia) is a decision",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_FragCoord_z",
+    "file": "bi_gl_FragCoord_z.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_FragCoord_w",
+    "file": "bi_gl_FragCoord_w.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_FragCoord_assign_invalid",
+    "file": "bi_gl_FragCoord_assign_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_gl_FragCoord_in_helper",
+    "file": "bi_gl_FragCoord_in_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_FragCoord_passed_out_invalid",
+    "file": "bi_gl_FragCoord_passed_out_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_gl_PointCoord",
+    "file": "bi_gl_PointCoord.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_PrimitiveID",
+    "file": "bi_gl_PrimitiveID.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_Layer",
+    "file": "bi_gl_Layer.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_HelperInvocation",
+    "file": "bi_gl_HelperInvocation.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_SamplePosition",
+    "file": "bi_gl_SamplePosition.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_max_constants",
+    "file": "bi_gl_max_constants.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_gl_vertex_var_in_fragment_invalid",
+    "file": "bi_gl_vertex_var_in_fragment_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "bi_front_facing_in_helper",
+    "file": "bi_front_facing_in_helper.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_300_es",
+    "file": "hdr_version_300_es.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_310_es",
+    "file": "hdr_version_310_es.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_330_core",
+    "file": "hdr_version_330_core.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_320_no_es_invalid",
+    "file": "hdr_version_320_no_es_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_version_320_es_twice_invalid",
+    "file": "hdr_version_320_es_twice_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_version_after_statement_invalid",
+    "file": "hdr_version_after_statement_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_version_after_comment",
+    "file": "hdr_version_after_comment.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_after_blank_lines",
+    "file": "hdr_version_after_blank_lines.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_indented",
+    "file": "hdr_version_indented.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_trailing_comment",
+    "file": "hdr_version_trailing_comment.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_block_comment_inside",
+    "file": "hdr_version_block_comment_inside.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_version_missing_es_wrong_case_invalid",
+    "file": "hdr_version_missing_es_wrong_case_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_version_garbage_number",
+    "file": "hdr_version_garbage_number.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_version_absent",
+    "file": "hdr_version_absent.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "no #version means GLSL 1.10: out qualifier is invalid there"
+  },
+  {
+    "name": "hdr_precision_missing_invalid",
+    "file": "hdr_precision_missing_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "fragment shaders need a default float precision"
+  },
+  {
+    "name": "hdr_precision_mediump",
+    "file": "hdr_precision_mediump.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_precision_lowp",
+    "file": "hdr_precision_lowp.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_precision_redeclared",
+    "file": "hdr_precision_redeclared.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_precision_after_use",
+    "file": "hdr_precision_after_use.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "default precision changes mid-file: b is highp, a is mediump"
+  },
+  {
+    "name": "hdr_precision_int_only_invalid",
+    "file": "hdr_precision_int_only_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "hdr_precision_sampler",
+    "file": "hdr_precision_sampler.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "hdr_precision_inside_function",
+    "file": "hdr_precision_inside_function.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_define_empty",
+    "file": "pp_define_empty.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_define_function_macro",
+    "file": "pp_define_function_macro.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_ifdef_gl_es",
+    "file": "pp_ifdef_gl_es.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "the most common real-world preprocessor idiom"
+  },
+  {
+    "name": "pp_if_0",
+    "file": "pp_if_0.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_if_version",
+    "file": "pp_if_version.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_line",
+    "file": "pp_line.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_error",
+    "file": "pp_error.frag",
+    "expect": "reject",
+    "diagnostic": "#error",
+    "source_valid": false
+  },
+  {
+    "name": "pp_pragma",
+    "file": "pp_pragma.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_pragma_unknown",
+    "file": "pp_pragma_unknown.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_extension_enable",
+    "file": "pp_extension_enable.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_extension_require_unknown",
+    "file": "pp_extension_require_unknown.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid #extension",
+    "source_valid": false
+  },
+  {
+    "name": "pp_extension_all_warn",
+    "file": "pp_extension_all_warn.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_null_directive",
+    "file": "pp_null_directive.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_hash_midline_invalid",
+    "file": "pp_hash_midline_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_undef",
+    "file": "pp_undef.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_directive_inside_function",
+    "file": "pp_directive_inside_function.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_directive_with_continuation",
+    "file": "pp_directive_with_continuation.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_between_plus_plus",
+    "file": "lex_comment_between_plus_plus.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "comment must separate tokens: `+/**/+` is `+ +`, never `++`"
+  },
+  {
+    "name": "lex_comment_splits_identifier_invalid",
+    "file": "lex_comment_splits_identifier_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_comment_in_swizzle",
+    "file": "lex_comment_in_swizzle.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_between_decl_tokens",
+    "file": "lex_comment_between_decl_tokens.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_block_divides",
+    "file": "lex_comment_block_divides.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "`//*` starts a line comment, not a block comment"
+  },
+  {
+    "name": "lex_comment_divide_vs_comment",
+    "file": "lex_comment_divide_vs_comment.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_star_slash_in_line",
+    "file": "lex_comment_star_slash_in_line.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_block_contains_line",
+    "file": "lex_comment_block_contains_line.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_block_stars",
+    "file": "lex_comment_block_stars.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_nested_invalid",
+    "file": "lex_comment_nested_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_comment_line_continuation",
+    "file": "lex_comment_line_continuation.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "backslash-newline extends a // comment"
+  },
+  {
+    "name": "lex_comment_eof_no_newline",
+    "file": "lex_comment_eof_no_newline.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_comment_multiline_block_line_count",
+    "file": "lex_comment_multiline_block_line_count.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_no_trailing_newline",
+    "file": "lex_no_trailing_newline.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_cr_only_newlines",
+    "file": "lex_cr_only_newlines.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "lone CR is a newline (also ends // comments)"
+  },
+  {
+    "name": "lex_cr_only_line_comment",
+    "file": "lex_cr_only_line_comment.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_mixed_newlines",
+    "file": "lex_mixed_newlines.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_lf_cr_inverted",
+    "file": "lex_lf_cr_inverted.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_tabs_formfeed_vtab",
+    "file": "lex_tabs_formfeed_vtab.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_one_token_per_line",
+    "file": "lex_one_token_per_line.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_no_whitespace_at_all",
+    "file": "lex_no_whitespace_at_all.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_utf8_bom_invalid",
+    "file": "lex_utf8_bom_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "BOM before #version: compilers differ; transpiler must not crash"
+  },
+  {
+    "name": "lex_embedded_nul_invalid",
+    "file": "lex_embedded_nul_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "NUL must not truncate the input silently"
+  },
+  {
+    "name": "lex_stray_chars_invalid",
+    "file": "lex_stray_chars_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_backtick_dollar_invalid",
+    "file": "lex_backtick_dollar_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_string_literal_invalid",
+    "file": "lex_string_literal_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_backslash_invalid",
+    "file": "lex_backslash_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_line_continuation_mid_token",
+    "file": "lex_line_continuation_mid_token.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "backslash-newline joins tokens: 1.5"
+  },
+  {
+    "name": "lex_line_continuation_in_identifier",
+    "file": "lex_line_continuation_in_identifier.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_number_dot_member",
+    "file": "lex_number_dot_member.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_number_then_ident_invalid",
+    "file": "lex_number_then_ident_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_exponent_without_digits_invalid",
+    "file": "lex_exponent_without_digits_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_exponent_signed_forms",
+    "file": "lex_exponent_signed_forms.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_empty_input",
+    "file": "lex_empty_input.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": true
+  },
+  {
+    "name": "lex_whitespace_only",
+    "file": "lex_whitespace_only.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": true
+  },
+  {
+    "name": "lex_only_version",
+    "file": "lex_only_version.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": true
+  },
+  {
+    "name": "lex_only_comment",
+    "file": "lex_only_comment.frag",
+    "expect": "reject",
+    "diagnostic": "main",
+    "source_valid": true
+  },
+  {
+    "name": "lex_extra_closing_brace",
+    "file": "lex_extra_closing_brace.frag",
+    "expect": "reject",
+    "diagnostic": "delimiter",
+    "source_valid": false
+  },
+  {
+    "name": "lex_mismatched_delims",
+    "file": "lex_mismatched_delims.frag",
+    "expect": "reject",
+    "diagnostic": "delimiter",
+    "source_valid": false
+  },
+  {
+    "name": "lex_unclosed_paren",
+    "file": "lex_unclosed_paren.frag",
+    "expect": "reject",
+    "diagnostic": "delimiter",
+    "source_valid": false
+  },
+  {
+    "name": "lex_missing_semicolon",
+    "file": "lex_missing_semicolon.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_stmt_at_global_scope",
+    "file": "lex_stmt_at_global_scope.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_global_expression_invalid",
+    "file": "lex_global_expression_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lex_deep_parens_500",
+    "file": "lex_deep_parens_500.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true,
+    "note": "exceeds the transpiler nesting limit; SkSL also rejects it (max parse depth)"
+  },
+  {
+    "name": "lex_deep_if_nesting_200",
+    "file": "lex_deep_if_nesting_200.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true,
+    "note": "exceeds the transpiler nesting limit; SkSL also rejects it (max parse depth)"
+  },
+  {
+    "name": "lex_deep_blocks_1000",
+    "file": "lex_deep_blocks_1000.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true,
+    "note": "exceeds the transpiler nesting limit; SkSL also rejects it (max parse depth)"
+  },
+  {
+    "name": "lex_long_sum_5000_terms",
+    "file": "lex_long_sum_5000_terms.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true,
+    "note": "exceeds the transpiler nesting limit; SkSL also rejects it (max parse depth)"
+  },
+  {
+    "name": "lex_right_assoc_ternary_200",
+    "file": "lex_right_assoc_ternary_200.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true,
+    "note": "exceeds the transpiler nesting limit; SkSL also rejects it (max parse depth)"
+  },
+  {
+    "name": "lex_many_statements_20000",
+    "file": "lex_many_statements_20000.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "stress; also SkSL program-size limits"
+  },
+  {
+    "name": "lex_many_functions_2000",
+    "file": "lex_many_functions_2000.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_many_uniforms_500",
+    "file": "lex_many_uniforms_500.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lex_long_line_1mb",
+    "file": "lex_long_line_1mb.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "~1MB single line"
+  },
+  {
+    "name": "mix_hash_noise",
+    "file": "mix_hash_noise.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_fbm_loop",
+    "file": "mix_fbm_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_hsv_to_rgb",
+    "file": "mix_hsv_to_rgb.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_cosine_palette",
+    "file": "mix_cosine_palette.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "float + vec3 broadcast with a leading-dot literal",
+    "source_valid": true
+  },
+  {
+    "name": "mix_rotation_matrix",
+    "file": "mix_rotation_matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_raymarch_sphere",
+    "file": "mix_raymarch_sphere.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_voronoi_cells",
+    "file": "mix_voronoi_cells.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_gaussian_kernel",
+    "file": "mix_gaussian_kernel.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_struct_light",
+    "file": "mix_struct_light.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_srgb_roundtrip",
+    "file": "mix_srgb_roundtrip.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_sdf_boolean_ops",
+    "file": "mix_sdf_boolean_ops.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_premultiplied_alpha",
+    "file": "mix_premultiplied_alpha.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "GL straight alpha vs Skia premultiplied: decision",
+    "source_valid": true
+  },
+  {
+    "name": "mix_bubble_sort_const",
+    "file": "mix_bubble_sort_const.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_matrix_chain",
+    "file": "mix_matrix_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mix_int_float_conversion_heavy",
+    "file": "mix_int_float_conversion_heavy.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "mix_everything_in_one_expression",
+    "file": "mix_everything_in_one_expression.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  }
+]

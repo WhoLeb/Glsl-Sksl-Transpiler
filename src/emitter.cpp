@@ -1,0 +1,1170 @@
+#include "emitter.hpp"
+#include "helpers.hpp"
+#include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
+#include <set>
+#include <unordered_map>
+#ifdef _MSC_VER
+#define GLSL_SKSL_NOINLINE __declspec(noinline)
+#else
+#define GLSL_SKSL_NOINLINE __attribute__((noinline))
+#endif
+namespace glsl_sksl {
+namespace {
+using ast::Expr;
+using ast::ExprKind;
+using ast::Stmt;
+using ast::StmtKind;
+using ast::DeclKind;
+using sema::Symbol;
+using sema::Storage;
+using sema::Type;
+using sema::Direction;
+
+// Identifiers that GLSL ES allows but SkSL reserves for its own types and intrinsics.
+const std::set<std::string> kReserved={
+    "half","half2","half3","half4","half2x2","half3x3","half4x4","half2x3","half2x4","half3x2","half3x4","half4x2","half4x3",
+    "float2","float3","float4","float2x2","float3x3","float4x4","float2x3","float2x4","float3x2","float3x4","float4x2","float4x3",
+    "int2","int3","int4","uint2","uint3","uint4","bool2","bool3","bool4","short","short2","short3","short4",
+    "ushort","ushort2","ushort3","ushort4","shader","colorFilter","blender","inline","noinline",
+    "saturate","unpremul","toLinearSrgb","fromLinearSrgb"};
+
+const char* const kComponents="xyzw";
+
+const Symbol* root(const Expr& e) {
+    const Expr* x=&e;
+    while(x->kind==ExprKind::Index||x->kind==ExprKind::Field)x=x->operands[0].get();
+    return x->kind==ExprKind::Name?x->symbol:nullptr;
+}
+bool isWrite(const Expr& e) {
+    return e.kind==ExprKind::Assign||((e.kind==ExprKind::Unary||e.kind==ExprKind::Postfix) && (e.text=="++"||e.text=="--"));
+}
+bool isDerivativeCall(const Expr& e) {
+    return e.kind==ExprKind::Call && e.function && e.function->builtin && sema::isDerivative(e.function->name);
+}
+
+int binaryPrecedence(const std::string& op) {
+    if(op=="||")return 4;
+    if(op=="^^")return 5;
+    if(op=="&&")return 6;
+    if(op=="|")return 7;
+    if(op=="^")return 8;
+    if(op=="&")return 9;
+    if(op=="=="||op=="!=")return 10;
+    if(op=="<"||op==">"||op=="<="||op==">=")return 11;
+    if(op=="<<"||op==">>")return 12;
+    if(op=="+"||op=="-")return 13;
+    return 14;   // * / %
+}
+int precedence(const Expr& e) {
+    switch(e.kind) {
+    case ExprKind::Comma: return 1;
+    case ExprKind::Assign: return 2;
+    case ExprKind::Ternary: return 3;
+    case ExprKind::Binary: return binaryPrecedence(e.text);
+    case ExprKind::Unary: return 15;
+    case ExprKind::Postfix: case ExprKind::Call: case ExprKind::Constructor: case ExprKind::Index:
+    case ExprKind::Field: case ExprKind::Method: return 16;
+    default: return 17;
+    }
+}
+
+// Shortest decimal spelling that reads back as the same 32-bit float.
+std::string floatText(float f) {
+    char buffer[48];
+    for(int digits=1;digits<=9;++digits) {
+        std::snprintf(buffer,sizeof buffer,"%.*g",digits,static_cast<double>(f));
+        if(std::strtof(buffer,nullptr)==f)break;
+    }
+    std::string s=buffer;
+    if(s.find_first_of(".e")==std::string::npos)s+=".0";
+    return s;
+}
+bool scalarText(const sema::Scalar& v, std::string& out) {
+    std::string s;
+    switch(v.base) {
+    case Type::Float:
+        if(!(v.f==v.f) || v.f>3.4e38f || v.f<-3.4e38f)return false;
+        s=floatText(v.f);
+        break;
+    case Type::Int:
+        s=v.i==INT32_MIN?"-2147483647 - 1":std::to_string(v.i);
+        break;
+    case Type::Bool: out+=v.b?"true":"false"; return true;
+    default: return false;
+    }
+    out+=s[0]=='-'?"("+s+")":s;
+    return true;
+}
+void intText(std::string& out, std::uint64_t raw) {
+    const auto v=static_cast<std::uint32_t>(raw);
+    if(v<=0x7FFFFFFFu)out+=std::to_string(v);
+    else if(v==0x80000000u)out+="(-2147483647 - 1)";
+    else out+="(-"+std::to_string(0x100000000ull-v)+")";
+}
+
+class Emitter {
+public:
+    Emitter(const ast::TranslationUnit& unit, const sema::Program& program, std::string prefix, DiagnosticSink& sink)
+        :unit(unit),program(program),prefix(std::move(prefix)),helpers(this->prefix),sink(sink){}
+
+    std::string run() {
+        if(!program.main)return {};
+        if(!program.writesFragColor && program.outputs.empty())
+            error(Loc{1,1},"output","shader without an output: it neither writes gl_FragColor nor declares an 'out vec4'",
+                "write the color to gl_FragColor (GLSL ES 1.00) or to an 'out vec4' variable");
+        nameStructs();
+        analyzeFunctions();
+        lanes=quad(program.main);
+        std::vector<const sema::Function*> order;
+        std::set<const sema::Function*> seen;
+        visitOrder(program.main,seen,order);
+        for(const sema::Function* f:order)if(functions[f].fragCoord)usesFragCoord=true;
+
+        std::string structs, globals, code, entry;
+        out=&structs; structDefinitions();
+        out=&globals; generatedGlobals(); globalDeclarations();
+        out=&code;
+        for(const sema::Function* f:order)function(*f);
+        out=&entry; mainFunction();
+        return helpers.definitions()+structs+globals+code+entry;
+    }
+
+private:
+    struct FunctionInfo {
+        std::vector<const sema::Function*> callees;     // user functions with a definition, in call order
+        bool derivative=false, touches=false, writes=false, fragCoord=false;   // in the function itself
+        bool quad=false, touchesAll=false, writesAll=false, closed=false;      // including callees
+    };
+    struct StmtInfo { bool sync=false, returns=false, jumps=false; };          // jumps: break/continue that leave it
+    struct Access { std::set<const Symbol*> reads, writes; bool readsGlobals=false, writesGlobals=false; };
+
+    const ast::TranslationUnit& unit;
+    const sema::Program& program;
+    const std::string prefix;
+    BuiltinHelpers helpers;
+    DiagnosticSink& sink;
+    std::map<const sema::Function*,FunctionInfo> functions;
+    std::map<const sema::StructDef*,std::string> structNames;
+    std::unordered_map<const Stmt*,StmtInfo> stmtInfo;
+    bool lanes=false, usesFragCoord=false;
+
+    // State of the function being emitted.
+    const sema::Function* current=nullptr;
+    int tailLane=0;                         // lane whose returns become assignments (tail of a quad function)
+    std::set<const Symbol*> shared;         // indices of loops that all lanes run together
+    std::set<const Symbol*> varying;        // locals whose value can differ between the pixels of a quad
+    std::unordered_map<const Expr*,std::string> hoisted;    // derivative or quad call -> temporary
+    int temps=0;
+    std::string* out=nullptr;
+    int indent=0;
+
+    // ------------------------------------------------------------------ output
+    void line(const std::string& s) {
+        out->append(static_cast<std::size_t>(indent)*4,' ');
+        *out+=s;
+        *out+='\n';
+    }
+    void error(Loc at, const std::string& code, const std::string& message, const std::string& suggestion={}) {
+        sink.error(at,"unsupported."+code,"Unsupported "+message,suggestion);
+    }
+    std::string temp(){return prefix+"t"+std::to_string(++temps);}
+    // Name of a variable in another pixel of the quad. Generated names start with the prefix,
+    // which no identifier of the shader starts with, so neither form can collide.
+    std::string laneName(const std::string& name, int lane) const {
+        if(lane==0)return name;
+        if(name.compare(0,prefix.size(),prefix)==0)return name+"_L"+std::to_string(lane);
+        return prefix+"L"+std::to_string(lane)+"_"+name;
+    }
+    std::string userName(const std::string& name) const {
+        return kReserved.count(name)||name.compare(0,3,"sk_")==0?prefix+"u_"+name:name;
+    }
+    std::string typeName(const Type& t) const {
+        if(t.base==Type::Struct) {
+            const auto it=structNames.find(t.structDef);
+            return it!=structNames.end()?it->second:(t.structDef?t.structDef->name:std::string());
+        }
+        Type b=t; b.arrays.clear();
+        return skslType(b);
+    }
+    static std::string dims(const Type& t) {
+        std::string s;
+        for(int n:t.arrays)s+="["+std::to_string(n)+"]";
+        return s;
+    }
+    std::string symbolName(const Symbol* s, int lane) const {
+        if(!s)return "?";
+        switch(s->storage) {
+        case Storage::BuiltIn:
+            if(s->name=="gl_FragColor")return laneName(prefix+"color",lane);
+            if(s->name=="gl_FragCoord")return laneName(prefix+"fragCoord",lane);
+            return s->name;
+        case Storage::Output: return laneName(prefix+"color",lane);
+        case Storage::Uniform: return s->name;
+        case Storage::Global: return s->constQualified?userName(s->name):laneName(userName(s->name),lane);
+        default: return shared.count(s)?userName(s->name):laneName(userName(s->name),lane);
+        }
+    }
+    std::string functionName(const sema::Function* f, int lane) {
+        if(f==program.main)return prefix+"entry";
+        if(quad(f))return prefix+"Q_"+f->name;
+        if(laneFunction(f))return laneName(userName(f->name),lane);
+        return userName(f->name);
+    }
+
+    // ------------------------------------------------------------------ analysis
+    template<class F> static void eachExpr(const Expr& e, F& f) {
+        f(e);
+        for(const auto& o:e.operands)eachExpr(*o,f);
+    }
+    template<class F> static void eachExpr(const Stmt& s, F& f) {
+        for(const Expr* e:{s.expr.get(),s.step.get()})if(e)eachExpr(*e,f);
+        if(s.decl)for(const auto& v:s.decl->declarators)if(v.init)eachExpr(*v.init,f);
+        for(const auto& x:s.body)eachExpr(*x,f);
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)eachExpr(*x,f);
+    }
+    // Variables with one value per pixel outside any function: user globals, the output and the coordinate.
+    static bool perPixel(const Symbol* s) {
+        if(!s)return false;
+        if(s->storage==Storage::Output)return true;
+        if(s->storage==Storage::Global)return !s->constQualified;
+        if(s->storage==Storage::BuiltIn)return s->name=="gl_FragColor"||s->name=="gl_FragCoord";
+        return false;
+    }
+
+    void analyzeFunctions() {
+        for(const auto& f:program.functions) {
+            if(f.builtin || !f.definition || !f.definition->body)continue;
+            FunctionInfo& info=functions[&f];
+            auto visit=[&](const Expr& e) {
+                if(e.kind==ExprKind::Name && perPixel(e.symbol)) {
+                    info.touches=true;
+                    if(e.symbol->name=="gl_FragCoord" && e.symbol->storage==Storage::BuiltIn)info.fragCoord=true;
+                }
+                if(isWrite(e) && perPixel(root(*e.operands[0])))info.writes=true;
+                if(e.kind!=ExprKind::Call || !e.function)return;
+                const sema::Function& callee=*e.function;
+                for(std::size_t i=0;i<callee.params.size() && i<e.operands.size();++i)
+                    if(callee.params[i].direction!=Direction::In && perPixel(root(*e.operands[i])))info.writes=true;
+                if(callee.builtin) {
+                    if(sema::isDerivative(callee.name))info.derivative=true;
+                } else if(callee.definition && std::find(info.callees.begin(),info.callees.end(),&callee)==info.callees.end())
+                    info.callees.push_back(&callee);
+            };
+            eachExpr(*f.definition->body,visit);
+        }
+        for(auto& f:functions)close(f.first);
+    }
+    FunctionInfo& close(const sema::Function* f) {
+        FunctionInfo& info=functions[f];
+        if(info.closed)return info;
+        info.closed=true;
+        info.quad=info.derivative; info.touchesAll=info.touches; info.writesAll=info.writes;
+        for(const sema::Function* c:info.callees) {
+            const FunctionInfo& ci=close(c);
+            info.quad=info.quad||ci.quad;
+            info.touchesAll=info.touchesAll||ci.touchesAll;
+            info.writesAll=info.writesAll||ci.writesAll;
+        }
+        return info;
+    }
+    const FunctionInfo* infoOf(const sema::Function* f) const {
+        if(!f || f->builtin)return nullptr;
+        const auto it=functions.find(f);
+        return it==functions.end()?nullptr:&it->second;
+    }
+    bool quad(const sema::Function* f) const {const FunctionInfo* i=infoOf(f);return i && i->quad;}
+    bool touchesGlobals(const sema::Function* f) const {const FunctionInfo* i=infoOf(f);return i && i->touchesAll;}
+    bool writesGlobals(const sema::Function* f) const {const FunctionInfo* i=infoOf(f);return i && i->writesAll;}
+    // Functions without derivatives that use per-pixel globals get one copy per lane.
+    bool laneFunction(const sema::Function* f) const {return lanes && !quad(f) && touchesGlobals(f);}
+    bool isQuadCall(const Expr& e) const {return e.kind==ExprKind::Call && quad(e.function);}
+    bool isSync(const Expr& e) const {return isDerivativeCall(e)||isQuadCall(e);}
+
+    void visitOrder(const sema::Function* f, std::set<const sema::Function*>& seen, std::vector<const sema::Function*>& order) {
+        if(!f || !seen.insert(f).second)return;
+        const auto it=functions.find(f);
+        if(it==functions.end())return;
+        for(const sema::Function* c:it->second.callees)visitOrder(c,seen,order);
+        order.push_back(f);
+    }
+
+    const StmtInfo& info(const Stmt& s) {
+        const auto found=stmtInfo.find(&s);
+        if(found!=stmtInfo.end())return found->second;
+        StmtInfo i;
+        auto visit=[&](const Expr& e){if(isSync(e))i.sync=true;};
+        for(const Expr* e:{s.expr.get(),s.step.get()})if(e)eachExpr(*e,visit);
+        if(s.decl)for(const auto& v:s.decl->declarators)if(v.init)eachExpr(*v.init,visit);
+        if(s.kind==StmtKind::Return)i.returns=true;
+        if(s.kind==StmtKind::Break||s.kind==StmtKind::Continue)i.jumps=true;
+        const bool encloses=s.kind==StmtKind::For||s.kind==StmtKind::While||s.kind==StmtKind::DoWhile||s.kind==StmtKind::Switch;
+        auto child=[&](const Stmt& c) {
+            const StmtInfo ci=info(c);
+            i.sync=i.sync||ci.sync;
+            i.returns=i.returns||ci.returns;
+            if(!encloses)i.jumps=i.jumps||ci.jumps;
+        };
+        for(const auto& x:s.body)child(*x);
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)child(*x);
+        return stmtInfo[&s]=i;
+    }
+
+    bool sideEffects(const Expr& e) const {
+        bool found=false;
+        auto visit=[&](const Expr& x) {
+            if(isWrite(x))found=true;
+            if(x.kind==ExprKind::Call && x.function) {
+                for(const auto& p:x.function->params)if(p.direction!=Direction::In)found=true;
+                if(writesGlobals(x.function))found=true;
+            }
+        };
+        eachExpr(e,visit);
+        return found;
+    }
+    void access(const Expr& e, Access& a, const Expr* rootAssign, bool skipSync) const {
+        if(skipSync && isSync(e))return;
+        if(e.kind==ExprKind::Name && e.symbol)a.reads.insert(e.symbol);
+        if(isWrite(e) && &e!=rootAssign)
+            if(const Symbol* s=root(*e.operands[0]))a.writes.insert(s);
+        if(e.kind==ExprKind::Call && e.function) {
+            for(std::size_t i=0;i<e.function->params.size() && i<e.operands.size();++i)
+                if(e.function->params[i].direction!=Direction::In)
+                    if(const Symbol* s=root(*e.operands[i]))a.writes.insert(s);
+            a.readsGlobals=a.readsGlobals||touchesGlobals(e.function);
+            a.writesGlobals=a.writesGlobals||writesGlobals(e.function);
+        }
+        for(std::size_t i=0;i<e.operands.size();++i) {
+            // The target of the statement's own assignment is written after the value is computed.
+            if(&e==rootAssign && i==0 && e.operands[0]->kind==ExprKind::Name)continue;
+            access(*e.operands[i],a,rootAssign,skipSync);
+        }
+    }
+    void access(const Stmt& s, Access& a) const {
+        for(const Expr* e:{s.expr.get(),s.step.get()})if(e)access(*e,a,nullptr,false);
+        if(s.decl)for(const auto& v:s.decl->declarators) {
+            if(v.symbol)a.writes.insert(v.symbol);
+            if(v.init)access(*v.init,a,nullptr,false);
+        }
+        for(const auto& x:s.body)access(*x,a);
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)access(*x,a);
+    }
+    static bool readsPerPixel(const Access& a) {
+        for(const Symbol* s:a.reads)if(perPixel(s))return true;
+        return a.readsGlobals;
+    }
+    static bool writesPerPixel(const Access& a) {
+        for(const Symbol* s:a.writes)if(perPixel(s))return true;
+        return a.writesGlobals;
+    }
+    // Whether moving `moved` before `rest` can change what either computes. Variables are compared
+    // directly; globals that called functions use are compared as a group.
+    static bool conflict(const Access& moved, const Access& rest) {
+        for(const Symbol* s:moved.reads)if(rest.writes.count(s))return true;
+        for(const Symbol* s:moved.writes)if(rest.reads.count(s)||rest.writes.count(s))return true;
+        if(rest.writesGlobals && readsPerPixel(moved))return true;
+        if(moved.readsGlobals && writesPerPixel(rest))return true;
+        if(moved.writesGlobals && (readsPerPixel(rest)||writesPerPixel(rest)))return true;
+        if(rest.readsGlobals && writesPerPixel(moved))return true;
+        return false;
+    }
+
+    // Uniformity: whether an expression has the same value in the four pixels of the quad.
+    bool uniform(const Expr& e) const {
+        if(e.constant)return true;
+        switch(e.kind) {
+        case ExprKind::Name: {
+            const Symbol* s=e.symbol;
+            if(!s)return false;
+            switch(s->storage) {
+            case Storage::Uniform: return true;
+            case Storage::Global: return s->constQualified;
+            case Storage::Local: case Storage::Parameter: return !varying.count(s);
+            default: return false;
+            }
+        }
+        case ExprKind::Call:
+            if(!e.function)return false;
+            if(!e.function->builtin && (quad(e.function)||touchesGlobals(e.function)))return false;
+            break;
+        default: break;
+        }
+        for(const auto& o:e.operands)if(!uniform(*o))return false;
+        return true;
+    }
+    void markVarying(const Symbol* s, bool& changed) {
+        if(s && (s->storage==Storage::Local||s->storage==Storage::Parameter) && varying.insert(s).second)changed=true;
+    }
+    void writesVarying(const Expr& e, bool control, bool& changed) {
+        if(e.kind==ExprKind::Ternary) {
+            writesVarying(*e.operands[0],control,changed);
+            const bool u=control && uniform(*e.operands[0]);
+            writesVarying(*e.operands[1],u,changed);
+            writesVarying(*e.operands[2],u,changed);
+            return;
+        }
+        if(e.kind==ExprKind::Binary && (e.text=="&&"||e.text=="||")) {
+            writesVarying(*e.operands[0],control,changed);
+            writesVarying(*e.operands[1],control && uniform(*e.operands[0]),changed);
+            return;
+        }
+        if(e.kind==ExprKind::Assign && !(control && uniform(*e.operands[1]) && uniform(*e.operands[0])))markVarying(root(*e.operands[0]),changed);
+        if(isWrite(e) && e.kind!=ExprKind::Assign && !(control && uniform(*e.operands[0])))markVarying(root(*e.operands[0]),changed);
+        if(e.kind==ExprKind::Call && e.function) {
+            const bool u=control && uniform(e);
+            for(std::size_t i=0;i<e.function->params.size() && i<e.operands.size();++i)
+                if(e.function->params[i].direction!=Direction::In && !u)markVarying(root(*e.operands[i]),changed);
+        }
+        for(const auto& o:e.operands)writesVarying(*o,control,changed);
+    }
+    // Returns 1 when some pixels of the quad may have returned, 2 when some may have left a loop.
+    int walkVarying(const Stmt& s, bool control, bool& changed) {
+        switch(s.kind) {
+        case StmtKind::Block: case StmtKind::Switch: {
+            int flags=0;
+            bool c=control;
+            if(s.kind==StmtKind::Switch) {
+                writesVarying(*s.expr,control,changed);
+                c=control && uniform(*s.expr);
+            }
+            for(const auto& x:s.body) {
+                const int f=walkVarying(*x,c,changed);
+                flags|=f;
+                if(f&1)c=false;
+            }
+            return flags;
+        }
+        case StmtKind::Declaration:
+            for(const auto& v:s.decl->declarators)
+                if(v.init) {
+                    writesVarying(*v.init,control,changed);
+                    if(!(control && uniform(*v.init)))markVarying(v.symbol,changed);
+                }
+            return 0;
+        case StmtKind::Expression: writesVarying(*s.expr,control,changed); return 0;
+        case StmtKind::If: {
+            writesVarying(*s.expr,control,changed);
+            const bool u=control && uniform(*s.expr);
+            int flags=walkVarying(*s.then,u,changed);
+            if(s.otherwise)flags|=walkVarying(*s.otherwise,u,changed);
+            return flags;
+        }
+        case StmtKind::For: {
+            int flags=walkVarying(*s.loop,control,changed);
+            // After a pixel-dependent exit the remaining iterations run for some pixels only.
+            if(flags)flags|=walkVarying(*s.loop,false,changed);
+            return flags&1;
+        }
+        case StmtKind::Return:
+            if(s.expr)writesVarying(*s.expr,control,changed);
+            return control?0:1;
+        case StmtKind::Break: case StmtKind::Continue: return control?0:2;
+        default: return 0;
+        }
+    }
+    void computeVarying(const sema::Function& f, bool parametersVary) {
+        varying.clear();
+        if(parametersVary)for(const auto& p:f.definition->params)if(p.symbol)varying.insert(p.symbol);
+        bool changed=true;
+        while(changed) {
+            changed=false;
+            walkVarying(*f.definition->body,true,changed);
+        }
+    }
+
+    // ------------------------------------------------------------------ expressions
+    std::string expr(const Expr& e, int lane, int context=0) {
+        std::string s;
+        expr(s,e,lane,context);
+        return s;
+    }
+    void expr(std::string& o, const Expr& e, int lane, int context) {
+        const auto h=hoisted.find(&e);
+        if(h!=hoisted.end()) {
+            o+=laneName(h->second,lane);
+            return;
+        }
+        const bool parens=e.parenthesized||precedence(e)<context;
+        if(parens)o+='(';
+        node(o,e,lane);
+        if(parens)o+=')';
+    }
+    void node(std::string& o, const Expr& e, int lane) {
+        switch(e.kind) {
+        case ExprKind::IntLiteral: case ExprKind::UintLiteral: intText(o,e.intValue); break;
+        case ExprKind::FloatLiteral: floatLiteral(o,e); break;
+        case ExprKind::BoolLiteral: o+=e.intValue?"true":"false"; break;
+        case ExprKind::Name: o+=symbolName(e.symbol,lane); break;
+        case ExprKind::Unary: if(!folded(o,e))unary(o,e,lane); break;
+        case ExprKind::Postfix: expr(o,*e.operands[0],lane,16); o+=e.text; break;
+        case ExprKind::Binary:
+            if(folded(o,e))break;
+            expr(o,*e.operands[0],lane,binaryPrecedence(e.text));
+            o+=" "+e.text+" ";
+            expr(o,*e.operands[1],lane,binaryPrecedence(e.text)+1);
+            break;
+        case ExprKind::Assign:
+            expr(o,*e.operands[0],lane,15);
+            o+=" "+e.text+" ";
+            expr(o,*e.operands[1],lane,2);
+            break;
+        case ExprKind::Ternary:
+            expr(o,*e.operands[0],lane,4);
+            o+=" ? ";
+            expr(o,*e.operands[1],lane,2);
+            o+=" : ";
+            expr(o,*e.operands[2],lane,3);
+            break;
+        case ExprKind::Call: call(o,e,lane); break;
+        case ExprKind::Constructor: constructor(o,e,lane); break;
+        case ExprKind::Index:
+            expr(o,*e.operands[0],lane,16);
+            o+='[';
+            expr(o,*e.operands[1],lane,0);
+            o+=']';
+            break;
+        case ExprKind::Field: field(o,e,lane); break;
+        case ExprKind::Method: length(o,e); break;
+        case ExprKind::Comma:
+            expr(o,*e.operands[0],lane,1);
+            o+=", ";
+            expr(o,*e.operands[1],lane,2);
+            break;
+        }
+    }
+    void arguments(std::string& o, const Expr& e, std::size_t first, int lane) {
+        o+='(';
+        for(std::size_t i=first;i<e.operands.size();++i) {
+            if(i>first)o+=", ";
+            expr(o,*e.operands[i],lane,2);
+        }
+        o+=')';
+    }
+    // GLSL ignores the components of the last argument that a vector, scalar or matrix constructor
+    // does not need, and lets vector constructors take matrices; SkSL requires float3(v.xyz) and
+    // the matrix elements.
+    GLSL_SKSL_NOINLINE void constructor(std::string& o, const Expr& e, int lane) {
+        o+=typeName(e.type)+dims(e.type);
+        const bool resize=e.type.isMatrix() && e.operands.size()==1 && e.operands[0]->type.isMatrix();
+        if(!e.type.isBasic() || resize){arguments(o,e,0,lane);return;}
+        int remaining=e.type.components();
+        o+='(';
+        for(std::size_t i=0;i<e.operands.size();++i) {
+            const Expr& a=*e.operands[i];
+            const int k=a.type.components();
+            if(i)o+=", ";
+            if(a.type.isMatrix() && !e.type.isMatrix() && !sideEffects(a)) {
+                const int take=std::min(k,remaining);
+                for(int c=0;c<take;++c) {
+                    if(c)o+=", ";
+                    expr(o,a,lane,16);
+                    o+="["+std::to_string(c/a.type.rows)+"]["+std::to_string(c%a.type.rows)+"]";
+                }
+                remaining-=take;
+            } else if(i+1==e.operands.size() && a.type.isBasic() && !a.type.isMatrix() && k>remaining && remaining>0) {
+                expr(o,a,lane,16);
+                o+='.';
+                o.append(kComponents,static_cast<std::size_t>(remaining));
+                remaining=0;
+            } else {
+                expr(o,a,lane,2);
+                remaining-=k;
+            }
+        }
+        o+=')';
+    }
+    GLSL_SKSL_NOINLINE static void floatLiteral(std::string& o, const Expr& e) {
+        std::string s=e.text;
+        while(!s.empty() && (s.back()=='f'||s.back()=='F'))s.pop_back();
+        o+=s;
+    }
+    GLSL_SKSL_NOINLINE void unary(std::string& o, const Expr& e, int lane) {
+        std::string operand;
+        expr(operand,*e.operands[0],lane,15);
+        o+=e.text;
+        // "- -x", not "--x"
+        if(!operand.empty() && (operand[0]=='+'||operand[0]=='-') && (e.text[0]=='+'||e.text[0]=='-'))o+=' ';
+        o+=operand;
+    }
+    // Constant integer remainders and bit operations, which SkSL lacks, are replaced by their value.
+    GLSL_SKSL_NOINLINE bool folded(std::string& o, const Expr& e) {
+        static const std::set<std::string> lowered={"%","&","|","^","~","<<",">>"};
+        if(!e.constant || !e.value || !lowered.count(e.text))return false;
+        return constantText(o,*e.value);
+    }
+    bool constantText(std::string& o, const sema::Constant& c) const {
+        if(!c.type.isBasic() || c.values.empty())return false;
+        std::string s;
+        if(c.type.isScalar())return scalarText(c.values[0],o);
+        s=typeName(c.type)+"(";
+        for(std::size_t i=0;i<c.values.size();++i) {
+            if(i)s+=", ";
+            if(!scalarText(c.values[i],s))return false;
+        }
+        o+=s+")";
+        return true;
+    }
+    GLSL_SKSL_NOINLINE void call(std::string& o, const Expr& e, int lane) {
+        const sema::Function* f=e.function;
+        if(!f)o+=e.text;
+        else if(f->builtin) {
+            if(sema::isDerivative(f->name))
+                sink.error(e.loc,"internal","Internal error: derivative "+ast::toGlsl(e)+" was not lowered");
+            o+=BuiltinHelpers::needed(*f)?helpers.use(*f):e.text;
+        } else o+=functionName(f,lane);
+        arguments(o,e,0,lane);
+    }
+    GLSL_SKSL_NOINLINE void field(std::string& o, const Expr& e, int lane) {
+        const Expr& base=*e.operands[0];
+        const Symbol* s=base.kind==ExprKind::Name?base.symbol:nullptr;
+        if(s && s->storage==Storage::Uniform && s->type.base==Type::Struct && s->type.structDef && s->type.structDef->block && !s->type.isArray()) {
+            o+=e.text;   // member of a flattened uniform block
+            return;
+        }
+        expr(o,base,lane,16);
+        o+='.';
+        if(!e.swizzle.empty())for(int c:e.swizzle)o+=kComponents[c];
+        else o+=userName(e.text);
+    }
+    GLSL_SKSL_NOINLINE void length(std::string& o, const Expr& e) const {
+        if(e.value && constantText(o,*e.value))return;
+        const Type& t=e.operands[0]->type;
+        o+=std::to_string(t.isArray()?t.arrays.front():t.isMatrix()?t.columns:t.rows);
+    }
+
+    // ------------------------------------------------------------------ statements, one lane
+    std::string declarator(const ast::Declarator& v, int lane) {
+        const Symbol* s=v.symbol;
+        std::string text=s->constQualified?"const ":"";
+        text+=typeName(s->type)+" "+symbolName(s,lane)+dims(s->type);
+        if(v.init) {
+            text+=" = ";
+            expr(text,*v.init,lane,2);
+        }
+        return text;
+    }
+    std::string done(int lane) const {return laneName(prefix+"done",lane);}
+    bool rewritingReturns(int lane) const {return lane>0 && tailLane==lane;}
+
+    void stmt(const Stmt& s, int lane) {
+        switch(s.kind) {
+        case StmtKind::Block:
+            line("{");
+            ++indent; block(s.body,0,lane); --indent;
+            line("}");
+            break;
+        case StmtKind::Declaration:
+            for(const auto& v:s.decl->declarators)if(v.symbol)line(declarator(v,lane)+";");
+            break;
+        case StmtKind::Expression: line(expr(*s.expr,lane)+";"); break;
+        case StmtKind::If: ifStatement(s,lane); break;
+        case StmtKind::Switch: switchStatement(s,lane,false); break;
+        case StmtKind::For: forStatement(s,lane,false); break;
+        case StmtKind::Return: returnStatement(s,lane); break;
+        case StmtKind::Break: line("break;"); break;
+        case StmtKind::Continue: line("continue;"); break;
+        default: break;   // empty statements; while, do-while and discard are refused by the semantic pass
+        }
+    }
+    void block(const std::vector<ast::StmtPtr>& list, std::size_t first, int lane) {
+        int guards=0;
+        for(std::size_t i=first;i<list.size();++i) {
+            stmt(*list[i],lane);
+            // In the tail of a quad function the lanes after a return must skip the rest.
+            if(rewritingReturns(lane) && i+1<list.size() && info(*list[i]).returns) {
+                line("if (!"+done(lane)+") {");
+                ++indent; ++guards;
+            }
+        }
+        for(;guards>0;--guards){--indent;line("}");}
+    }
+    void contents(const Stmt& s, int lane) {
+        if(s.kind==StmtKind::Block)block(s.body,0,lane);
+        else stmt(s,lane);
+    }
+    void ifStatement(const Stmt& s, int lane) {
+        line("if ("+expr(*s.expr,lane)+") {");
+        ++indent; contents(*s.then,lane); --indent;
+        if(s.otherwise) {
+            line("} else {");
+            ++indent; contents(*s.otherwise,lane); --indent;
+        }
+        line("}");
+    }
+    void switchStatement(const Stmt& s, int lane, bool synced) {
+        line("switch ("+expr(*s.expr,lane)+") {");
+        ++indent;
+        for(const auto& x:s.body) {
+            if(x->kind==StmtKind::Case) {
+                std::string label;
+                if(!(x->expr->value && constantText(label,*x->expr->value)))label=expr(*x->expr,lane);
+                line("case "+label+":");
+            } else if(x->kind==StmtKind::Default)line("default:");
+            else {
+                ++indent;
+                if(synced)sync(*x);
+                else stmt(*x,lane);
+                --indent;
+            }
+        }
+        --indent;
+        line("}");
+    }
+    void forStatement(const Stmt& s, int lane, bool synced) {
+        std::string h="for (";
+        if(s.init && s.init->kind==StmtKind::Declaration && s.init->decl->declarators.size()==1 && s.init->decl->declarators[0].symbol)
+            h+=declarator(s.init->decl->declarators[0],lane);
+        else if(s.init && s.init->expr)expr(h,*s.init->expr,lane,0);
+        h+="; ";
+        if(s.expr)expr(h,*s.expr,lane,0);
+        h+="; ";
+        if(s.step)expr(h,*s.step,lane,0);
+        line(h+") {");
+        ++indent;
+        if(rewritingReturns(lane) && info(*s.loop).returns)line("if ("+done(lane)+") break;");
+        if(synced)syncContents(*s.loop);
+        else contents(*s.loop,lane);
+        --indent;
+        line("}");
+    }
+    void returnStatement(const Stmt& s, int lane) {
+        if(rewritingReturns(lane)) {
+            if(s.expr)line(laneName(prefix+"ret",lane)+" = "+expr(*s.expr,lane)+";");
+            line(done(lane)+" = true;");
+            return;
+        }
+        line(s.expr?"return "+expr(*s.expr,lane)+";":"return;");
+    }
+
+    // ------------------------------------------------------------------ statements, all lanes together
+    // Statements that compute derivatives run for the four pixels of the quad in lockstep; the rest
+    // runs once per lane.
+    void sync(const Stmt& s) {
+        const StmtInfo i=info(s);
+        if(!i.sync && !i.returns && !i.jumps) {
+            for(int lane=0;lane<4;++lane)stmt(s,lane);
+            return;
+        }
+        switch(s.kind) {
+        case StmtKind::Block:
+            line("{");
+            ++indent; syncContents(s); --indent;
+            line("}");
+            return;
+        case StmtKind::Declaration:
+            for(const auto& v:s.decl->declarators) {
+                if(!v.symbol)continue;
+                if(v.init)hoistStatement(*v.init,nullptr,v.init.get(),false);
+                for(int lane=0;lane<4;++lane)line(declarator(v,lane)+";");
+            }
+            return;
+        case StmtKind::Expression: {
+            const Expr& e=*s.expr;
+            const bool assign=e.kind==ExprKind::Assign;
+            hoistStatement(e,assign?&e:nullptr,assign?e.operands[1].get():&e,!assign);
+            if(isQuadCall(e))return;   // the hoisted call is the statement
+            for(int lane=0;lane<4;++lane)line(expr(e,lane)+";");
+            return;
+        }
+        case StmtKind::Return:
+            if(s.expr)hoistStatement(*s.expr,nullptr,s.expr.get(),false);
+            if(current==program.main){line("return;");return;}
+            if(s.expr)for(int lane=1;lane<4;++lane)line(laneName(prefix+"ret",lane)+" = "+expr(*s.expr,lane)+";");
+            line(s.expr?"return "+expr(*s.expr,0)+";":"return;");
+            return;
+        case StmtKind::Break: line("break;"); return;
+        case StmtKind::Continue: line("continue;"); return;
+        case StmtKind::If:
+            hoistStatement(*s.expr,nullptr,nullptr,false);
+            if(!uniform(*s.expr)){divergent(s);return;}
+            line("if ("+expr(*s.expr,0)+") {");
+            ++indent; syncContents(*s.then); --indent;
+            if(s.otherwise) {
+                line("} else {");
+                ++indent; syncContents(*s.otherwise); --indent;
+            }
+            line("}");
+            return;
+        case StmtKind::Switch:
+            hoistStatement(*s.expr,nullptr,nullptr,false);
+            if(!uniform(*s.expr)){divergent(s);return;}
+            switchStatement(s,0,true);
+            return;
+        case StmtKind::For: {
+            const Symbol* index=nullptr;
+            if(s.init && s.init->kind==StmtKind::Declaration && !s.init->decl->declarators.empty())index=s.init->decl->declarators[0].symbol;
+            if(index)shared.insert(index);
+            forStatement(s,0,true);
+            if(index)shared.erase(index);
+            return;
+        }
+        default:
+            for(int lane=0;lane<4;++lane)stmt(s,lane);
+            return;
+        }
+    }
+    void syncContents(const Stmt& s) {
+        if(s.kind==StmtKind::Block)for(const auto& x:s.body)sync(*x);
+        else sync(s);
+    }
+
+    static void outermostSync(const Expr& e, std::vector<const Expr*>& nodes, const Emitter& self) {
+        if(self.isSync(e)){nodes.push_back(&e);return;}
+        for(const auto& o:e.operands)outermostSync(*o,nodes,self);
+    }
+    bool quadCallEffects(const Expr& call) const {
+        for(const auto& p:call.function->params)if(p.direction!=Direction::In)return true;
+        return writesGlobals(call.function);
+    }
+    // Computes the derivatives and quad calls of a statement's expression before the statement, in
+    // evaluation order. `value` is the position whose evaluation may have side effects (the whole
+    // expression, or the value of the statement's assignment).
+    void hoistStatement(const Expr& e, const Expr* rootAssign, const Expr* value, bool voidAllowed) {
+        std::vector<const Expr*> nodes;
+        outermostSync(e,nodes,*this);
+        if(nodes.empty())return;
+        Access rest;
+        access(e,rest,rootAssign,true);
+        bool ok=true;
+        for(const Expr* n:nodes) {
+            bool movable=true;
+            for(const auto& o:n->operands)if(sideEffects(*o))movable=false;
+            if(isQuadCall(*n)) {
+                if(quadCallEffects(*n) && n!=value)movable=false;
+                if(n->function->returnType.base==Type::Void && !(voidAllowed && n==value))movable=false;
+            }
+            Access a;
+            access(*n,a,nullptr,false);
+            if(conflict(a,rest))movable=false;
+            if(!movable) {
+                ok=false;
+                derivativeError(*n,"it cannot be computed apart from the side effects of "+quoted(e),
+                    "compute "+quoted(*n)+" in a separate statement before this one");
+            }
+        }
+        if(ok)for(const Expr* n:nodes)hoistIn(*n);
+    }
+    static std::string quoted(const Expr& e){return "'"+ast::toGlsl(e)+"'";}
+    GLSL_SKSL_NOINLINE void derivativeError(const Expr& n, const std::string& why, const std::string& suggestion) {
+        const std::string what=isDerivativeCall(n)?"derivative "+quoted(n):"call "+quoted(n)+" (the function computes derivatives)";
+        error(n.loc,"derivative",what+": "+why,suggestion);
+    }
+    void hoistIn(const Expr& e) {
+        if(hoisted.count(&e))return;
+        for(const auto& o:e.operands)hoistIn(*o);
+        if(isDerivativeCall(e))hoistDerivative(e);
+        else if(isQuadCall(e))hoistQuadCall(e);
+    }
+    // GPUs compute fine derivatives as differences within the 2x2 quad: dFdx is the right minus
+    // the left pixel of the row, dFdy the upper minus the lower pixel of the column. Lane 1 is the
+    // horizontal neighbour, lane 2 the vertical one and lane 3 the diagonal one; quad holds +1 or -1
+    // per axis, depending on which side the neighbour is on.
+    GLSL_SKSL_NOINLINE void hoistDerivative(const Expr& e) {
+        const Expr& a=*e.operands[0];
+        const std::string T=typeName(a.type);
+        std::string v[4];
+        if(a.kind==ExprKind::Name && !hoisted.count(&a))for(int lane=0;lane<4;++lane)v[lane]=expr(a,lane);
+        else {
+            const std::string t=temp();
+            for(int lane=0;lane<4;++lane) {
+                v[lane]=laneName(t,lane);
+                line(T+" "+v[lane]+" = "+expr(a,lane,2)+";");
+            }
+        }
+        auto difference=[&](const std::string& name, int hi, int lo, const char* axis) {
+            line(T+" "+name+" = ("+v[hi]+" - "+v[lo]+") * "+prefix+"quad."+axis+";");
+        };
+        auto dx=[&](const std::string& t) {
+            difference(t,1,0,"x"); line(T+" "+laneName(t,1)+" = "+t+";");
+            difference(laneName(t,2),3,2,"x"); line(T+" "+laneName(t,3)+" = "+laneName(t,2)+";");
+        };
+        auto dy=[&](const std::string& t) {
+            difference(t,2,0,"y"); line(T+" "+laneName(t,2)+" = "+t+";");
+            difference(laneName(t,1),3,1,"y"); line(T+" "+laneName(t,3)+" = "+laneName(t,1)+";");
+        };
+        const std::string& name=e.function->name;
+        const std::string result=temp();
+        if(name=="dFdx")dx(result);
+        else if(name=="dFdy")dy(result);
+        else {
+            const std::string x=temp(), y=temp();
+            dx(x); dy(y);
+            for(int lane=0;lane<4;++lane)line(T+" "+laneName(result,lane)+" = abs("+laneName(x,lane)+") + abs("+laneName(y,lane)+");");
+        }
+        hoisted[&e]=result;
+    }
+    GLSL_SKSL_NOINLINE void hoistQuadCall(const Expr& e) {
+        const sema::Function& f=*e.function;
+        std::string args;
+        for(std::size_t i=0;i<e.operands.size();++i)
+            for(int lane=0;lane<4;++lane) {
+                if(!args.empty())args+=", ";
+                expr(args,*e.operands[i],lane,2);
+            }
+        const std::string name=functionName(&f,0);
+        if(f.returnType.base==Type::Void) {
+            line(name+"("+args+");");
+            hoisted[&e]="";
+            return;
+        }
+        const std::string T=typeName(f.returnType), result=temp();
+        for(int lane=1;lane<4;++lane) {
+            line(T+" "+laneName(result,lane)+";");
+            args+=(args.empty()?"":", ")+laneName(result,lane);
+        }
+        line(T+" "+result+" = "+name+"("+args+");");
+        hoisted[&e]=result;
+    }
+
+    // An if or switch whose condition differs between the pixels of the quad. Derivatives in its
+    // branches are computed before it, which gives the value GPUs produce when the argument does
+    // not change inside the branches; GLSL itself leaves derivatives there undefined.
+    void divergent(const Stmt& s) {
+        const StmtInfo i=info(s);
+        if(i.returns||i.jumps) {
+            error(s.loc,"derivative-control","early exit (return, break or continue) under a condition that depends on the pixel position, before a derivative: "
+                "GLSL leaves derivatives undefined once the pixels of a 2x2 quad take different paths",
+                "compute the derivatives before this statement, or move the return, break or continue after the last derivative");
+            return;
+        }
+        std::vector<const Expr*> nodes;
+        bool inLoop=false;
+        branchSync(s,true,false,nodes,inLoop);
+        Access region;
+        access(s,region);
+        bool ok=true;
+        for(const Expr* n:nodes) {
+            Access a;
+            access(*n,a,nullptr,false);
+            bool movable=!inLoop && !conflict(a,region) && !(isQuadCall(*n) && (quadCallEffects(*n)||n->function->returnType.base==Type::Void));
+            for(const auto& o:n->operands)if(sideEffects(*o))movable=false;
+            if(!movable) {
+                ok=false;
+                derivativeError(*n,"it is under a condition that depends on the pixel position, and it "+std::string(inLoop?"is inside a loop there":"reads values the condition's branches change")+
+                    "; GLSL leaves derivatives undefined when the pixels of a 2x2 quad take different paths",
+                    "compute "+quoted(*n)+" before the "+(s.kind==StmtKind::If?"if":"switch")+" and use the result inside it");
+            }
+        }
+        if(!ok)return;
+        for(const Expr* n:nodes)hoistIn(*n);
+        for(int lane=0;lane<4;++lane)stmt(s,lane);
+    }
+    void branchSync(const Stmt& s, bool top, bool loop, std::vector<const Expr*>& nodes, bool& inLoop) {
+        if(!info(s).sync)return;
+        if(!top) {
+            std::vector<const Expr*> found;
+            for(const Expr* e:{s.expr.get(),s.step.get()})if(e)outermostSync(*e,found,*this);
+            if(s.decl)for(const auto& v:s.decl->declarators)if(v.init)outermostSync(*v.init,found,*this);
+            if(!found.empty() && loop)inLoop=true;
+            nodes.insert(nodes.end(),found.begin(),found.end());
+        }
+        const bool inner=loop||s.kind==StmtKind::For||s.kind==StmtKind::While||s.kind==StmtKind::DoWhile;
+        for(const auto& x:s.body)branchSync(*x,false,inner,nodes,inLoop);
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)branchSync(*x,false,inner,nodes,inLoop);
+    }
+
+    // ------------------------------------------------------------------ functions
+    std::string parameterName(const ast::Param& p, std::size_t i, int lane) const {
+        return p.symbol?symbolName(p.symbol,lane):laneName(prefix+"p"+std::to_string(i),lane);
+    }
+    std::string parameter(const sema::Function& f, std::size_t i, int lane) const {
+        const sema::Param& p=f.params[i];
+        const char* direction=p.direction==Direction::Out?"out ":p.direction==Direction::InOut?"inout ":"";
+        return direction+typeName(p.type)+" "+parameterName(f.definition->params[i],i,lane)+dims(p.type);
+    }
+    void function(const sema::Function& f) {
+        current=&f;
+        shared.clear();
+        if(quad(&f)) {
+            quadFunction(f);
+            return;
+        }
+        const int copies=laneFunction(&f)?4:1;
+        for(int lane=0;lane<copies;++lane) {
+            std::string signature=typeName(f.returnType)+" "+functionName(&f,lane)+"(";
+            for(std::size_t i=0;i<f.params.size();++i)signature+=(i?", ":"")+parameter(f,i,lane);
+            line(signature+") {");
+            ++indent;
+            unwrittenOutputs(f,lane);
+            block(f.definition->body->body,0,lane);
+            --indent;
+            line("}");
+        }
+    }
+    // GLSL leaves an out parameter that the function never writes undefined; SkSL rejects it, so it
+    // is set to zero.
+    void unwrittenOutputs(const sema::Function& f, int lane) {
+        Access a;
+        access(*f.definition->body,a);
+        for(std::size_t i=0;i<f.params.size();++i) {
+            const sema::Param& p=f.params[i];
+            const Symbol* s=f.definition->params[i].symbol;
+            if(p.direction!=Direction::Out || !p.type.isBasic() || (s && a.writes.count(s)))continue;
+            const char* zero=p.type.base==Type::Bool?"(false)":p.type.base==Type::Float?"(0.0)":"(0)";
+            line(parameterName(f.definition->params[i],i,lane)+" = "+typeName(p.type)+zero+";");
+        }
+    }
+    // The four lanes of every parameter, and out parameters for the results of lanes 1-3.
+    void quadFunction(const sema::Function& f) {
+        const bool isMain=&f==program.main;
+        computeVarying(f,!isMain);
+        std::string signature=typeName(f.returnType)+" "+functionName(&f,0)+"(";
+        std::string params;
+        for(std::size_t i=0;i<f.params.size();++i)
+            for(int lane=0;lane<4;++lane)params+=(params.empty()?"":", ")+parameter(f,i,lane);
+        if(f.returnType.base!=Type::Void)
+            for(int lane=1;lane<4;++lane)params+=std::string(params.empty()?"":", ")+"out "+typeName(f.returnType)+" "+laneName(prefix+"ret",lane);
+        line(signature+params+") {");
+        ++indent;
+        for(int lane=0;lane<4;++lane)unwrittenOutputs(f,lane);
+        const auto& body=f.definition->body->body;
+        std::size_t last=0;
+        for(std::size_t i=0;i<body.size();++i)if(info(*body[i]).sync)last=i;
+        for(std::size_t i=0;i<=last && i<body.size();++i)sync(*body[i]);
+        const std::size_t tail=last+1;
+        if(!isMain && tail<body.size()) {
+            // After the last derivative, lanes 1-3 finish separately (their returns become
+            // assignments and flags), then lane 0 runs with real returns.
+            bool returns=false;
+            for(std::size_t i=tail;i<body.size();++i) {
+                returns=returns||info(*body[i]).returns;
+                if(const Stmt* sw=switchWithReturn(*body[i]))
+                    error(sw->loc,"derivative-control","return inside a switch in "+quotedName(f)+" after a derivative",
+                        "set a result variable in the switch and return it after the switch");
+            }
+            for(int lane=1;lane<4;++lane) {
+                if(returns)line("bool "+done(lane)+" = false;");
+                tailLane=lane;
+                block(body,tail,lane);
+                tailLane=0;
+            }
+        }
+        if(tail<body.size())block(body,tail,0);
+        --indent;
+        line("}");
+    }
+    static std::string quotedName(const sema::Function& f){return "'"+f.name+"'";}
+    const Stmt* switchWithReturn(const Stmt& s) {
+        if(!info(s).returns)return nullptr;
+        if(s.kind==StmtKind::Switch)return &s;
+        for(const auto& x:s.body)if(const Stmt* r=switchWithReturn(*x))return r;
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.loop.get()})if(x)if(const Stmt* r=switchWithReturn(*x))return r;
+        return nullptr;
+    }
+
+    // ------------------------------------------------------------------ declarations
+    void nameStructs() {
+        std::set<std::string> used;
+        int n=0;
+        for(const auto& def:program.structs) {
+            if(def.block)continue;
+            std::string name=def.name.empty()?prefix+"S"+std::to_string(++n):userName(def.name);
+            if(!used.insert(name).second) {
+                name=prefix+"S"+std::to_string(++n)+"_"+def.name;
+                used.insert(name);
+            }
+            structNames[&def]=name;
+        }
+    }
+    void structDefinitions() {
+        for(const auto& def:program.structs) {
+            if(def.block)continue;
+            line("struct "+structNames[&def]+" {");
+            ++indent;
+            for(const auto& f:def.fields)line(typeName(f.type)+" "+userName(f.name)+dims(f.type)+";");
+            --indent;
+            line("};");
+        }
+    }
+    void generatedGlobals() {
+        const int copies=lanes?4:1;
+        for(int lane=0;lane<copies;++lane)line("float4 "+laneName(prefix+"color",lane)+";");
+        if(usesFragCoord||lanes)for(int lane=0;lane<copies;++lane)line("float4 "+laneName(prefix+"fragCoord",lane)+";");
+        if(lanes)line("float2 "+prefix+"quad;");
+    }
+    void uniformName(const std::string& name, Loc at) {
+        if(userName(name)!=name)
+            error(at,"reserved-name","uniform name "+quoted(name)+": SkSL reserves it, and uniforms keep their names so the application can set them",
+                "rename the uniform");
+    }
+    static std::string quoted(const std::string& s){return "'"+s+"'";}
+    static bool rowMajor(const ast::Qualifiers& q) {
+        for(const auto& x:q.list)for(const auto& id:x.layout)if(id.name=="row_major")return true;
+        return false;
+    }
+    void globalDeclarations() {
+        bool rowMajorDefault=false;
+        for(const auto& d:unit.decls) {
+            if(d->kind==DeclKind::Qualifier && d->qualifiers.has("uniform") && rowMajor(d->qualifiers))rowMajorDefault=true;
+            if(d->kind==DeclKind::Block && d->block->qualifiers.has("uniform")) {
+                bool row=rowMajorDefault||rowMajor(d->block->qualifiers), matrices=false;
+                for(const auto& g:d->block->members) {
+                    row=row||rowMajor(g.qualifiers);
+                    Type t;
+                    if(sema::keywordType(g.type.name,t) && t.isMatrix())matrices=true;
+                }
+                if(row && matrices)
+                    error(d->loc,"matrix-layout","row_major uniform block "+quoted(d->block->name)+": SkSL runtime shaders have no uniform blocks, and the "
+                        "application sets the flattened matrix uniforms in column-major order, so data laid out row by row would arrive transposed",
+                        "remove row_major and upload the matrices column by column");
+            }
+            if(d->kind==DeclKind::Variable) {
+                for(const auto& v:d->declarators) {
+                    const Symbol* s=v.symbol;
+                    if(!s)continue;
+                    if(s->storage==Storage::Uniform) {
+                        uniformName(s->name,s->loc);
+                        line("uniform "+typeName(s->type)+" "+s->name+dims(s->type)+";");
+                    } else if(s->storage==Storage::Global) {
+                        const int copies=lanes && !s->constQualified?4:1;
+                        for(int lane=0;lane<copies;++lane)line(declarator(v,lane)+";");
+                    }
+                }
+            } else if(d->kind==DeclKind::Block && d->block->qualifiers.has("uniform")) {
+                for(const auto& def:program.structs) {
+                    if(!def.block || def.name!=d->block->name || def.loc.line!=d->block->loc.line || def.loc.column!=d->block->loc.column)continue;
+                    for(const auto& f:def.fields) {
+                        uniformName(f.name,f.loc);
+                        line("uniform "+typeName(f.type)+" "+f.name+dims(f.type)+";");
+                    }
+                }
+            }
+        }
+    }
+    void mainFunction() {
+        const std::string coord=prefix+"coord";
+        line("half4 main(float2 "+coord+") {");
+        ++indent;
+        if(lanes)line(prefix+"quad = 1.0 - 2.0 * mod(floor("+coord+"), 2.0);");
+        if(usesFragCoord||lanes) {
+            const std::string q=prefix+"quad";
+            line(prefix+"fragCoord = float4("+coord+", 0.0, 1.0);");
+            if(lanes) {
+                line(laneName(prefix+"fragCoord",1)+" = float4("+coord+".x + "+q+".x, "+coord+".y, 0.0, 1.0);");
+                line(laneName(prefix+"fragCoord",2)+" = float4("+coord+".x, "+coord+".y + "+q+".y, 0.0, 1.0);");
+                line(laneName(prefix+"fragCoord",3)+" = float4("+coord+" + "+q+", 0.0, 1.0);");
+            }
+        }
+        for(int lane=0;lane<(lanes?4:1);++lane)line(laneName(prefix+"color",lane)+" = float4(0);");
+        line(prefix+"entry();");
+        line("return half4("+prefix+"color);");
+        --indent;
+        line("}");
+    }
+};
+}
+
+std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink) {
+    // Generated names start with a prefix that no identifier of the shader starts with.
+    std::string prefix="transpiler_";
+    auto taken=[&] {
+        for(const auto& t:tokens)if(t.kind==TokenKind::Identifier && t.text.compare(0,prefix.size(),prefix)==0)return true;
+        return false;
+    };
+    while(taken())prefix+="x";
+    return Emitter(unit,program,prefix,sink).run();
+}
+}

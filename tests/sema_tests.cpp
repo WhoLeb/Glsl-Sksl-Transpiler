@@ -1,0 +1,398 @@
+#include "parser.hpp"
+#include "sema.hpp"
+#include "glsl_sksl/transpiler.hpp"
+#include <iostream>
+#include <string>
+#include <utility>
+#include <vector>
+using namespace glsl_sksl;
+namespace {
+int failures=0;
+void check(bool value, const char* what, int line) {
+    if(value)return;
+    ++failures;
+    std::cerr<<"sema_tests.cpp:"<<line<<": failed: "<<what<<"\n";
+}
+#define CHECK(x) check((x),#x,__LINE__)
+
+const std::string P="#version 300 es\nprecision highp float;\nout vec4 color;\n";
+
+// Parses the source and, when parsing succeeded, runs semantic analysis into the same sink.
+DiagnosticSink analyzeSource(const std::string& source) {
+    DiagnosticSink sink;
+    auto shader=parseShader(source,sink);
+    if(shader.unit && !sink.errors)sema::analyze(*shader.unit,sink);
+    else if(!shader.unit && !sink.errors)sink.error({},"internal","parser produced no translation unit");
+    return sink;
+}
+void printDiagnostics(const std::string& source, const DiagnosticSink& sink) {
+    std::cerr<<"  source: "<<source<<"\n  diagnostics:";
+    for(const auto& d:sink.list)
+        std::cerr<<" ["<<(d.severity==Severity::Error?"error":"warning")<<" "<<d.code<<"] "<<d.line<<":"<<d.column<<" "<<d.message<<";";
+    std::cerr<<"\n";
+}
+// True when analysis produces no Error diagnostics.
+bool ok(const std::string& source) {
+    auto sink=analyzeSource(source);
+    for(const auto& d:sink.list)if(d.severity==Severity::Error){
+        std::cerr<<"  expected no errors\n";
+        printDiagnostics(source,sink);
+        return false;
+    }
+    return true;
+}
+// True when some Error diagnostic has exactly this code.
+bool error(const std::string& source, const std::string& code) {
+    auto sink=analyzeSource(source);
+    for(const auto& d:sink.list)if(d.severity==Severity::Error && d.code==code)return true;
+    std::cerr<<"  expected error "<<code<<"\n";
+    printDiagnostics(source,sink);
+    return false;
+}
+// True when there are no errors but some Warning has this code.
+bool warns(const std::string& source, const std::string& code) {
+    auto sink=analyzeSource(source);
+    bool found=false;
+    for(const auto& d:sink.list){
+        if(d.severity==Severity::Error){printDiagnostics(source,sink);return false;}
+        if(d.code==code)found=true;
+    }
+    if(!found){
+        std::cerr<<"  expected warning "<<code<<"\n";
+        printDiagnostics(source,sink);
+    }
+    return found;
+}
+
+void mustBeOk() {
+    const std::vector<std::string> cases={
+        P+"void main(){color=vec4(1.);}",
+        P+"void main(){vec3 a=vec3(1.); vec4 b=vec4(a,1.); mat2 m=mat2(1.,2.,3.,4.); vec2 v=m*vec2(1.); color=vec4(v,b.x,1.);}",
+        P+"float f(float x); void main(){color=vec4(f(1.));} float f(float x){return x;}",
+        P+"struct S{float x; vec2 y;}; void main(){S s=S(1.,vec2(2.)); color=vec4(s.x,s.y,1.);}",
+        P+"const int N=3; float a[N]; void main(){color=vec4(float(a.length()));}",
+        P+"void main(){int i=7/2; float f=float(i); color=vec4(f);}",
+        P+"void main(){for(int i=0;i<4;++i){color=vec4(float(i));}}",
+        P+"void main(){vec4 c=vec4(1.); c.xy=vec2(0.); color=c.rgba;}",
+        P+"void main(){int x=1; switch(x){case 0: color=vec4(0.); break; default: color=vec4(1.);}}",
+        P+"float a[3]=float[3](1.,2.,3.); void main(){color=vec4(a[2]);}",
+        P+"void main(){float a[]=float[](1.,2.); color=vec4(a[1]);}",
+        "#version 100\nprecision mediump float;\nvoid main(){gl_FragColor=vec4(1.);}",
+        P+"int f(int x){return x+1;} void main(){color=vec4(float(f(1)));}",
+        P+"void main(){color=vec4(mat2(1.));}",
+        P+"void main(){vec4 v=vec4(1.); int n=v.length(); color=vec4(float(n));}",
+        P+"void main(){float a[3]; for(int i=0;i<3;++i){a[i]=1.;} color=vec4(a[0]);}",
+        P+"void main(){int x=7%2; color=vec4(float(x));}",
+        P+"void main(){for(int i=0;i<3;i+=2){} color=vec4(1.);}",
+        P+"void main(){float a,b; a=b=1.; color=vec4(true?a:b);}",
+        P+"void f(out float x){x=1.;} void main(){float y; f(y); color=vec4(y);}",
+        // Full sources: 3.10 allows any qualifier order.
+        "#version 310 es\nprecision highp float;\nout vec4 color;\nhighp uniform float b; void main(){color=vec4(b);}",
+    };
+    for(const auto& s:cases)CHECK(ok(s));
+}
+
+void mustReportError() {
+    const std::vector<std::pair<std::string,std::string>> cases={
+        {P+"void main(){float x=1;color=vec4(x);}","sema.type-mismatch"},
+        {P+"void main(){color=vec4(1.)+vec3(1.);}","sema.operator"},
+        {P+"void main(){int i=1; float f=i*2.0; color=vec4(f);}","sema.operator"},
+        {P+"void main(){color=vec4(1.,2.,3.,4.,5.);}","sema.constructor"},
+        {P+"void main(){color=vec4(1.,2.);}","sema.constructor"},
+        {P+"void main(){color=y;}","sema.undeclared"},
+        {P+"void main(){color=vec4(f(1.));}","sema.undeclared"},
+        {P+"float f(float x){return x;} void main(){color=vec4(f(1));}","sema.no-overload"},
+        {P+"void main(){const float c; color=vec4(c);}","sema.const-initializer"},
+        {P+"uniform float u; void main(){const float c=u; color=vec4(c);}","sema.const-initializer"},
+        {P+"uniform float u; void main(){u=1.; color=vec4(u);}","sema.not-lvalue"},
+        {P+"void main(){vec4 v; v.xx=vec2(1.); color=v;}","sema.not-lvalue"},
+        {P+"void main(){vec2 v; color=vec4(v.xyz,1.);}","sema.swizzle"},
+        {P+"void main(){vec4 v; color=vec4(v.xg,v.zw);}","sema.swizzle"},
+        {P+"void main(){float a[2]; color=vec4(a[2]);}","sema.index"},
+        {P+"void main(){float a[2]; color=vec4(a[-1]);}","sema.index"},
+        {P+"void main(){float a[0]; color=vec4(1.);}","sema.array-size"},
+        {P+"void main(){float a[1.5]; color=vec4(1.);}","sema.array-size"},
+        {P+"void main(){if(1){} color=vec4(1.);}","sema.condition"},
+        {P+"void main(){float x=1.; switch(x){default: break;} color=vec4(1.);}","sema.switch"},
+        {P+"void main(){int x=0; switch(x){case 1: break; case 1: break;} color=vec4(1.);}","sema.case"},
+        {P+"void main(){int x=0; switch(x){case 1: break; case 2:} color=vec4(1.);}","sema.switch"},
+        {P+"void main(){int x=0; switch(x){x=1; case 1: break;} color=vec4(1.);}","sema.switch"},
+        {P+"void main(){return 1;}","sema.return"},
+        {P+"float f(){return;} void main(){color=vec4(f());}","sema.return"},
+        {P+"float f(){return 1;} void main(){color=vec4(f());}","sema.return"},
+        {P+"float f(float x){return f(x);} void main(){color=vec4(f(1.));}","sema.recursion"},
+        {P+"float f(float x); float g(float x){return f(x);} float f(float x){return g(x);} void main(){color=vec4(f(1.));}","sema.recursion"},
+        {P+"float f(float x); void main(){color=vec4(f(1.));}","sema.undefined-function"},
+        {P+"void main(){} void main(){}","sema.redefinition"},
+        {P+"void main(int x){color=vec4(1.);}","sema.main"},
+        {P+"float main(){return 1.;}","sema.main"},
+        {P+"void main(){color=vec4(1.);} void f(){main();}","sema.main"},
+        {P+"void helper(){}","sema.missing-main"},
+        {P+"float f(float x); int f(float x){return 1;} void main(){color=vec4(1.);}","sema.overload"},
+        {P+"float f(in float x); float f(out float x){x=1.;return x;} void main(){color=vec4(1.);}","sema.overload"},
+        {P+"float sin(float x){return x;} void main(){color=vec4(1.);}","sema.builtin-redefinition"},
+        {P+"void main(){int x; int x; color=vec4(1.);}","sema.redefinition"},
+        {P+"void f(float a){float a;} void main(){color=vec4(1.);}","sema.redefinition"},
+        {P+"void main(){for(int i=0;i<2;++i){} color=vec4(float(i));}","sema.undeclared"},
+        {P+"void f(const float x){x=1.;} void main(){color=vec4(1.);}","sema.not-lvalue"},
+        {P+"void f(out float x){x=1.;} void main(){f(1.); color=vec4(1.);}","sema.not-lvalue"},
+        {P+"void f(out vec2 x){x=vec2(1.);} void main(){vec4 v; f(v.xx); color=v;}","sema.not-lvalue"},
+        {P+"uniform float u=1.; void main(){color=vec4(u);}","sema.initializer"},
+        {P+"uniform float u; float g=u; void main(){color=vec4(g);}","sema.global-initializer"},
+        {P+"inout float g; void main(){color=vec4(1.);}","sema.qualifier"},
+        {P+"void main(){uniform float x; color=vec4(1.);}","sema.qualifier"},
+        {P+"void f(const out float x){x=1.;} void main(){color=vec4(1.);}","sema.qualifier"},
+        {P+"highp uniform float b; void main(){color=vec4(b);}","sema.qualifier-order"},
+        {"#version 310 es\nprecision highp float;\nout vec4 color;\ncoherent uniform float v; void main(){color=vec4(v);}","sema.qualifier"},
+        {P+"layout(location=0) uniform float u; void main(){color=vec4(u);}","sema.layout"},
+        {P+"layout(foo) uniform float u; void main(){color=vec4(u);}","sema.layout"},
+        {P+"void main(){(true?color:color)=vec4(1.);}","sema.not-lvalue"},
+        {P+"void main(){bool b=1.<2.<3.; color=vec4(1.);}","sema.operator"},
+        {P+"void main(){float x=5.%2.; color=vec4(x);}","sema.operator"},
+        {P+"struct S{float x;}; void main(){S s=S(1); color=vec4(s.x);}","sema.constructor"},
+        {P+"struct S{vec2 v;}; void main(){S s=S(1.); color=vec4(1.);}","sema.constructor"},
+        {P+"struct S{float x;}; void main(){S s; color=vec4(s.y);}","sema.field"},
+        {P+"struct S{float x;}; struct S{float y;}; void main(){color=vec4(1.);}","sema.redefinition"},
+        {P+"void main(){float f=1.; color=vec4(f.x);}","sema.field"},
+        {P+"void main(){gl_FragColor=vec4(1.);}","sema.undeclared"},
+        {P+"void main(){gl_FragCoord=vec4(1.); color=vec4(1.);}","sema.not-lvalue"},
+        {P+"uniform sampler2D s; void main(){color=texture2D(s,vec2(0.));}","sema.undeclared"},
+        {P+"invariant uniform float u; void main(){color=vec4(u);}","sema.qualifier"},
+        // Full sources.
+        {"#version 300 es\nprecision highp float;\nout vec4 a; out vec4 b; void main(){a=b=vec4(1.);}","sema.output-location"},
+        {"#version 300 es\nprecision highp float;\nlayout(location=0) out vec4 a; layout(location=0) out vec4 b; void main(){a=b=vec4(1.);}","sema.output-location"},
+        {"#version 300 es\nprecision highp float;\nout mat2 m; void main(){m=mat2(1.);}","sema.output-type"},
+        {"#version 300 es\nout vec4 color; void main(){color=vec4(1.);}","sema.precision"},
+        {"#version 100\nprecision mediump float;\nvoid main(){gl_FragColor=vec4(1.); gl_FragData[0]=vec4(1.);}","sema.fragment-output"},
+        {"#version 100\nprecision mediump float;\nfloat a[2]; void main(){float b[2]; b=a; gl_FragColor=vec4(1.);}","sema.array-assignment"},
+        {"#version 100\nprecision mediump float;\nvoid main(){gl_FragColor=vec4(sinh(1.));}","sema.undeclared"},
+        {"#version 100\nprecision mediump float;\nvoid main(){int a[2]; gl_FragColor=vec4(float(a.length()));}","sema.method"},
+        {"#version 100\nprecision mediump float;\nout vec4 c; void main(){c=vec4(1.);}","sema.qualifier"},
+    };
+    for(const auto& c:cases)CHECK(error(c.first,c.second));
+}
+
+// Constant folding: each array size must be computed, so the out-of-range index is reported.
+void constantFolding() {
+    const std::vector<std::string> cases={
+        P+"const int N=2*3; float a[N]; void main(){color=vec4(a[6]);}",
+        P+"const ivec2 v=ivec2(3,4); float a[v.y]; void main(){color=vec4(a[4]);}",
+        P+"float a[int(2.5*2.)]; void main(){color=vec4(a[5]);}",
+        P+"float a[max(2,3)]; void main(){color=vec4(a[3]);}",
+        P+"const mat2 m=mat2(1.,2.,3.,4.); float a[int(m[1][0])]; void main(){color=vec4(a[3]);}",
+        P+"float a[ivec2(1,2).y+1]; void main(){color=vec4(a[3]);}",
+    };
+    for(const auto& s:cases)CHECK(error(s,"sema.index"));
+}
+
+void mustReportUnsupported() {
+    const std::vector<std::pair<std::string,std::string>> cases={
+        {P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}","unsupported.loop"},
+        {P+"void main(){int i=0; while(i<3){++i;} color=vec4(1.);}","unsupported.loop"},
+        {P+"void main(){for(int i=0;i<3;++i){i+=1;} color=vec4(1.);}","unsupported.loop"},
+        {P+"uniform int n; void main(){float a[3]; color=vec4(a[n]);}","unsupported.dynamic-index"},
+        {P+"uniform int n; void main(){int x=n%2; color=vec4(float(x));}","unsupported.operator"},
+        {P+"void main(){uint u=1u; color=vec4(float(u));}","unsupported.uint"},
+        {P+"uniform bool b; void main(){color=vec4(b?1.:0.);}","unsupported.bool-uniform"},
+        {P+"in vec2 uv; void main(){color=vec4(uv,0.,1.);}","unsupported.input"},
+        {P+"void main(){discard;}","unsupported.discard"},
+        {P+"void main(){color=vec4(isnan(1.)?1.:0.);}","unsupported.builtin"},
+        {P+"float f(bool b){if(b) return 1.;} void main(){color=vec4(f(true));}","unsupported.missing-return"},
+        {P+"uniform int n; void main(){switch(n){default: break; case 1: break;} color=vec4(1.);}","unsupported.switch-default"},
+        {P+"uniform int n; void main(){for(int i=0;i<2;++i){switch(n){case 0: continue;}} color=vec4(1.);}","unsupported.continue-in-switch"},
+        {P+"void main(){color=vec4(gl_FragCoord.z);}","unsupported.frag-coord"},
+        {P+"float[2] f(){return float[2](1.,2.);} void main(){color=vec4(f()[0]);}","unsupported.array-return"},
+        // Full source.
+        {"#version 310 es\nprecision highp float;\nout vec4 color;\nvoid main(){float a[2][2]; color=vec4(a[0][0]);}","unsupported.array-of-arrays"},
+    };
+    for(const auto& c:cases)CHECK(error(c.first,c.second));
+}
+
+void details() {
+    // The loop refusal must explain the MAX bound and the break alternative.
+    auto sink=analyzeSource(P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}");
+    const Diagnostic* loop=nullptr;
+    for(const auto& d:sink.list)if(d.code=="unsupported.loop" && !loop)loop=&d;
+    CHECK(loop!=nullptr);
+    if(loop)CHECK(loop->suggestion.find("MAX")!=std::string::npos && loop->suggestion.find("break")!=std::string::npos);
+
+    // The public API must render the refusal with the GLSL line and suggestion.
+    auto r=transpile(P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}");
+    CHECK(!r.ok());
+    if(!r.diagnostics.empty()){
+        const std::string text=formatDiagnostic(r.diagnostics[0]);
+        CHECK(text.find("GLSL 4 |")!=std::string::npos);
+        CHECK(text.find("suggestion:")!=std::string::npos);
+    }
+
+    // Reserved identifiers are a warning, not an error.
+    CHECK(warns(P+"float a__b; void main(){color=vec4(1.);}","syntax.reserved-name"));
+}
+}
+
+// Built-in replacement helpers: GLSL built-ins without an exact SkSL overload are emitted as
+// generated functions named <prefix><builtin>, defined before the code that calls them.
+const std::string HP="#version 300 es\nprecision highp float;\nuniform vec4 u;\nout vec4 color;\n";
+
+size_t countOf(const std::string& text, const std::string& needle) {
+    size_t n=0;
+    for(size_t p=text.find(needle); p!=std::string::npos; p=text.find(needle,p+needle.size()))++n;
+    return n;
+}
+bool hasDiagnostic(const Result& r, const std::string& code) {
+    for(const auto& d:r.diagnostics)if(d.code==code)return true;
+    return false;
+}
+void printResult(const std::string& shader, const Result& r) {
+    std::cerr<<"  shader: "<<shader<<"\n";
+    if(!r.source.empty())std::cerr<<"  source:\n"<<r.source<<"\n";
+    for(const auto& d:r.diagnostics)std::cerr<<"  diagnostic ["<<d.code<<"] "<<d.message<<"\n";
+}
+// Transpiles the shader; it must be accepted, and its source must contain every needle in
+// `present`, none in `absent`, and each needle in `order` in the given sequence.
+void expectSource(const std::string& shader, int line,
+                  const std::vector<std::string>& present,
+                  const std::vector<std::string>& absent={},
+                  const std::vector<std::string>& order={}) {
+    Result r=transpile(shader);
+    if(!r.ok()){
+        ++failures;
+        std::cerr<<"sema_tests.cpp:"<<line<<": failed: shader is accepted\n";
+        printResult(shader,r);
+        return;
+    }
+    for(const auto& n:present)if(r.source.find(n)==std::string::npos){
+        ++failures;
+        std::cerr<<"sema_tests.cpp:"<<line<<": failed: source contains \""<<n<<"\"\n";
+        printResult(shader,r);
+    }
+    for(const auto& n:absent)if(r.source.find(n)!=std::string::npos){
+        ++failures;
+        std::cerr<<"sema_tests.cpp:"<<line<<": failed: source does not contain \""<<n<<"\"\n";
+        printResult(shader,r);
+    }
+    size_t last=0;
+    for(const auto& n:order){
+        size_t p=r.source.find(n,last);
+        if(p==std::string::npos){
+            ++failures;
+            std::cerr<<"sema_tests.cpp:"<<line<<": failed: \""<<n<<"\" missing or out of order\n";
+            printResult(shader,r);
+            return;
+        }
+        last=p+1;
+    }
+}
+// Transpiles the shader; it must be refused with an error whose code is `code`.
+void expectRefused(const std::string& shader, const std::string& code, int line) {
+    Result r=transpile(shader);
+    if(r.ok() || !hasDiagnostic(r,code)){
+        ++failures;
+        std::cerr<<"sema_tests.cpp:"<<line<<": failed: shader is refused with \""<<code<<"\"\n";
+        printResult(shader,r);
+    }
+}
+
+void helpers() {
+    // sinh is replaced by a helper; the native call must not remain.
+    expectSource(HP+"void main(){color=vec4(sinh(u.x));}", __LINE__,
+                 {"float transpiler_sinh(float x)","transpiler_sinh("},
+                 {" sinh("});
+
+    // Float abs stays native; int abs gets a helper.
+    expectSource(HP+"void main(){color=vec4(abs(u.x), float(abs(int(u.y))), 0., 1.);}", __LINE__,
+                 {"abs(u.x)","int transpiler_abs(int x)"});
+
+    // Helper dependencies come before their users: min is used by clamp.
+    expectSource(HP+"void main(){ivec2 a=clamp(ivec2(u.xy),0,3); color=vec4(vec2(a),0.,1.);}", __LINE__,
+                 {},{},
+                 {"int transpiler_min(int a, int b)",
+                  "int transpiler_clamp(int x, int lo, int hi)",
+                  "int2 transpiler_clamp(int2 x, int lo, int hi)"});
+
+    // trunc is defined before modf, which calls it.
+    expectSource(HP+"void main(){float i; float f=modf(u.x,i); color=vec4(f,i,0.,1.);}", __LINE__,
+                 {},{},
+                 {"float transpiler_trunc(float x)","float transpiler_modf(float x, out float i)"});
+
+    // mix with a bool vector weight gets a helper; a float weight stays native.
+    expectSource(HP+"void main(){color=vec4(mix(u.xy,u.zw,bvec2(true,false)),mix(u.z,u.w,0.5),1.);}", __LINE__,
+                 {"float2 transpiler_mix(float2 x, float2 y, bool2 a)","mix(u.z"});
+
+    // Matrix helpers use SkSL's square-matrix types.
+    expectSource(HP+"void main(){mat3 m=transpose(mat3(u.x)); color=vec4(determinant(m),outerProduct(u.xy,u.zw)[0],1.);}", __LINE__,
+                 {"float3x3 transpiler_transpose(float3x3 m)",
+                  "float transpiler_determinant(float3x3 m)",
+                  "float2x2 transpiler_outerProduct(float2 c, float2 r)"});
+
+    // A helper used twice is defined once.
+    {
+        const std::string s=HP+"void main(){color=vec4(sinh(u.x)+sinh(u.y),0.,0.,1.);}";
+        Result r=transpile(s);
+        if(!r.ok() || countOf(r.source,"float transpiler_sinh(float x)")!=1){
+            ++failures;
+            std::cerr<<"sema_tests.cpp:"<<__LINE__<<": failed: \"float transpiler_sinh(float x)\" is defined exactly once\n";
+            printResult(s,r);
+        }
+    }
+
+    // A user identifier that starts with the prefix extends the prefix; the helper is not renamed silently.
+    expectSource(HP+"float transpiler_sinh_value=1.; void main(){color=vec4(sinh(u.x)+transpiler_sinh_value);}", __LINE__,
+                 {"transpiler_x","float transpiler_xsinh(float x)"},
+                 {"float transpiler_sinh(float x)"});
+
+    // Non-square matrices have no SkSL type and are refused.
+    expectRefused(HP+"void main(){mat2x3 m=mat2x3(1.); color=vec4(1.);}", "unsupported.matrix-shape", __LINE__);
+    expectRefused(HP+"void main(){color=vec4(outerProduct(u.xyz,u.xy)[0],1.);}", "unsupported.matrix-shape", __LINE__);
+}
+
+// Software derivatives: dFdx/dFdy/fwidth are computed from the 2x2 pixel quad, so the shader
+// needs quad lanes only when a derivative is used; refusals cover what cannot be computed.
+void derivatives() {
+    expectSource(HP+"void main(){float v=gl_FragCoord.x*u.x; color=vec4(dFdx(v),dFdy(v),fwidth(v),1.);}", __LINE__,
+                 {"transpiler_quad","transpiler_fragCoord_L3","half4 main(float2 transpiler_coord)"},
+                 {"dFdx(","dFdy(","fwidth("});
+
+    // A derivative inside a helper that returns early after fwidth keeps its statement order.
+    expectSource(HP+"float aa(float d){float w=fwidth(d); if(d>w) return 0.; return w;} void main(){color=vec4(aa(gl_FragCoord.x));}", __LINE__,
+                 {"transpiler_Q_aa(","transpiler_ret_L1","transpiler_done_L1"});
+
+    // Coordinate without derivatives: no quad lanes.
+    expectSource(HP+"void main(){color=vec4(gl_FragCoord.xy,0.,1.);}", __LINE__,
+                 {"transpiler_fragCoord"}, {"transpiler_quad"});
+    // GLSL ES 1.00 with the extension enabled.
+    expectSource("#version 100\n#extension GL_OES_standard_derivatives : enable\nprecision highp float;\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x));}", __LINE__,
+                 {"transpiler_quad"});
+    // GLSL ES 1.00 without the extension: derivatives are undeclared.
+    expectRefused("#version 100\nprecision highp float;\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x));}", "sema.undeclared", __LINE__);
+
+    // A return under a pixel-dependent condition before a derivative is refused.
+    expectRefused(HP+"void main(){float v=gl_FragCoord.x; if(v>4.){color=vec4(1.);return;} color=vec4(dFdx(v));}", "unsupported.derivative-control", __LINE__);
+    // A derivative of an expression that cannot be computed separately is refused.
+    expectRefused(HP+"void main(){float v=gl_FragCoord.x; color=vec4(dFdx(v++));}", "unsupported.derivative", __LINE__);
+    expectRefused(HP+"void main(){float v=gl_FragCoord.x; float r=0.; if(v>4.){v*=2.; r=dFdx(v);} color=vec4(r);}", "unsupported.derivative", __LINE__);
+
+    // gl_FragCoord.z, .w and the whole vector are refused.
+    expectRefused(HP+"void main(){color=gl_FragCoord;}", "unsupported.frag-coord", __LINE__);
+    // Struct uniforms, a single output at a non-zero location, and row_major blocks with matrices are refused.
+    expectRefused("#version 300 es\nprecision highp float;\nstruct S{float a;}; uniform S s; out vec4 color;\nvoid main(){color=vec4(s.a);}", "unsupported.struct-uniform", __LINE__);
+    expectRefused("#version 300 es\nprecision highp float;\nlayout(location=1) out vec4 color;\nvoid main(){color=vec4(1.);}", "unsupported.output-location", __LINE__);
+    expectRefused("#version 300 es\nprecision highp float;\nlayout(row_major) uniform B{mat2 m;}; out vec4 color;\nvoid main(){color=vec4(m[0],0.,1.);}", "unsupported.matrix-layout", __LINE__);
+
+    // Constructors are emitted with only the components they need.
+    expectSource(HP+"void main(){vec3 a=vec3(u); vec2 b=vec2(mat2(1.)); color=vec4(a.x,b,1.);}", __LINE__,
+                 {"float3(u.xyz)","[0][0]"});
+}
+
+int main() {
+    mustBeOk();
+    mustReportError();
+    constantFolding();
+    mustReportUnsupported();
+    details();
+    helpers();
+    derivatives();
+    if(failures)std::cerr<<failures<<" failed checks\n";
+    else std::cout<<"sema tests passed\n";
+    return failures?1:0;
+}
