@@ -269,8 +269,8 @@ def register(case, cases, root):
       note='callee mutation must not leak')
     C('arr_pass_type_style', 'float f(float[3] a){return a[1];} void main(){color=vec4(f(float[3](1.,2.,3.))/3.);}')
     C('arr_inout', 'void f(inout float a[2]){a[1]=7.;} void main(){float x[2]=float[2](1.,2.);f(x);color=vec4(x[1]/7.);}')
-    C('arr_return', 'float[2] f(){return float[2](1.,2.);} void main(){float a[2]=f();color=vec4(a[0],a[1],0.,1.)/2.;}', ok=False,
-      note='array-returning functions: lower or refuse (decision)')
+    C('arr_return', 'float[2] f(){return float[2](1.,2.);} void main(){float a[2]=f();color=vec4(a[0],a[1],0.,1.)/2.;}',
+      note='returned through an out parameter')
     C('arr_of_arrays', 'void main(){float a[2][3];a[1][2]=.5;color=vec4(a[1][2]);}', ok=False)
     C('arr_of_arrays_ctor', 'void main(){float a[2][2]=float[2][2](float[2](1.,2.),float[2](3.,4.));color=vec4(a[1][0]/4.);}', ok=False)
     C('arr_const_oob', 'void main(){float a[3];color=vec4(a[3]);}', ok=False, valid=False)
@@ -282,6 +282,25 @@ def register(case, cases, root):
     C('arr_global_mutated', 'float g[3];void main(){g[1]=.5;g[2]=g[1]*2.;color=vec4(g[1],g[2],0.,1.);}')
     C('arr_global_const', 'const float W[3]=float[3](.2,.3,.5);void main(){float s=0.;for(int i=0;i<3;++i)s+=W[i];color=vec4(s);}')
     C('arr_const_vec_array', 'const vec2 P[2]=vec2[2](vec2(1.,2.),vec2(3.,4.));void main(){color=vec4(P[0],P[1])/4.;}')
+    C('arr_ctor_swap_self', 'void main(){float a[2]=float[2](1.,2.);a=float[2](a[1],a[0]);color=vec4(a[0],a[1],0.,1.)/2.;}',
+      note='constructor reads the assigned array: elements go through a temporary')
+    C('arr_ctor_loop_index', 'void main(){float s=0.;for(int i=0;i<3;++i)s+=float[3](.1,.2,.3)[i];color=vec4(s);}')
+    C('arr_ctor_const_index_folded', 'void main(){color=vec4(float[3](.1,.2,.3)[1]);}')
+    C('arr_ctor_nested_args', 'float f(float a[2]){return a[0]+a[1];} void main(){color=vec4(f(float[2](f(float[2](.1,.2)),.3)));}')
+    C('arr_ctor_in_if_condition', 'void main(){color=vec4(0.);for(int i=0;i<2;++i)if(float[2](.1,.9)[i]>.5)color=vec4(1.);}')
+    C('arr_ctor_in_return', 'float f(int k){for(int i=0;i<2;++i)if(i==k)return float[2](.1,.9)[i];return 0.;} void main(){color=vec4(f(1));}')
+    C('arr_global_from_const_elem', 'const float W[3]=float[3](.2,.3,.5); const float X=W[1]; float Y=W[2]; void main(){color=vec4(X,Y,0.,1.);}',
+      note='const arrays become variables; global initializers read the folded elements')
+    C('arr_global_init_with_derivative', 'float G[2]=float[2](.25,.5); void main(){G[1]+=gl_FragCoord.x; color=vec4(G[0],dFdx(G[1]),0.,1.);}')
+    C('arr_ctor_in_derivative_arg', 'void main(){color=vec4(dFdx(float[2](gl_FragCoord.x,1.)[0]));}')
+    C('arr_of_struct_ctor', 'struct L{vec3 c;float i;}; void main(){L ls[2]=L[2](L(vec3(1.),.5),L(vec3(.2),1.));color=vec4(ls[1].c*ls[0].i,1.);}')
+    C('arr_ctor_in_quad_function_arg', 'float g(float a[2]){return dFdx(a[0]);} void main(){color=vec4(g(float[2](gl_FragCoord.x,1.)));}')
+    C('arr_ctor_side_effect_order', 'float n=0.; float h(){n+=1.;return n;} float f(float a[2],float b){return a[0]+b;} void main(){color=vec4(f(float[2](h(),1.),n));}',
+      note='h() runs before n is read, as in GLSL')
+    C('arr_assign_ternary', 'uniform float u; void main(){float a[2]=float[2](1.,2.);float b[2]=float[2](3.,4.);float c[2];c=u>0.?a:b;color=vec4(c[0]);}')
+    C('arr_init_ternary', 'uniform float u; void main(){float a[2]=float[2](1.,2.);float b[2]=float[2](3.,4.);float c[2]=u>0.?a:b;color=vec4(c[0]);}')
+    C('arr_compare', 'void main(){float a[2]=float[2](1.,2.);float b[2]=float[2](1.,2.);color=vec4(a==b?1.:0.);}')
+    C('arr_assign_nested_in_expr', 'void main(){float a[2]=float[2](1.,2.);float b[2];float x=(b=a)[0];color=vec4(x);}')
     C('arr_index_by_expr', 'void main(){float a[4]=float[4](1.,2.,3.,4.);int i=1;color=vec4(a[i+1]/4.);}', ok=False,
       note='non-constant index expression outside a loop var')
     C('arr_index_by_array_elem', 'void main(){int idx[2]=int[2](1,0);float a[2]=float[2](.25,.75);color=vec4(a[idx[0]]);}', ok=False,
@@ -295,6 +314,11 @@ def register(case, cases, root):
     C('struct_inout_param', 'struct S{float x;}; void bump(inout S s){s.x+=.25;} void main(){S s=S(.25);bump(s);bump(s);color=vec4(s.x);}')
     C('struct_copy_semantics', 'struct S{float x;}; void main(){S a=S(1.);S b=a;b.x=2.;color=vec4(a.x,b.x,0.,1.)/2.;}')
     C('struct_array_in_struct_ctor', 'struct S{float a[2];}; void main(){S s=S(float[2](.25,.5));color=vec4(s.a[0],s.a[1],0.,1.);}')
+    C('struct_array_assign', 'struct S{float a[2];float b;}; void main(){S s=S(float[2](1.,2.),3.);S t;t=s;color=vec4(t.a[1],t.b,0.,1.)/3.;}')
+    C('struct_array_self_ctor', 'struct S{float a[2];}; void main(){S s=S(float[2](1.,2.));s=S(float[2](s.a[1],s.a[0]));color=vec4(s.a[0]/2.);}')
+    C('struct_array_const_global', 'struct S{float a[2];float b;}; const S C=S(float[2](.1,.2),.3); const float Z=C.b; void main(){color=vec4(C.a[0],C.b,Z,1.);}')
+    C('struct_array_return', 'struct S{float a[2];}; S g(){S s=S(float[2](1.,2.));return s;} void main(){S t=g();color=vec4(t.a[0]);}',
+      note='returned through an out parameter')
     C('struct_with_matrix', 'struct S{mat2 m;vec2 v;}; void main(){S s=S(mat2(2.),vec2(1.));color=vec4(s.m*s.v,0.,1.)/2.;}')
     C('struct_with_bool_int', 'struct S{bool b;int i;ivec2 iv;bvec2 bv;}; void main(){S s=S(true,2,ivec2(3),bvec2(false));color=vec4(s.b?1.:0.,float(s.i+s.iv.x)/5.,s.bv.x?1.:0.,1.);}')
     C('struct_empty', 'struct S{}; void main(){color=vec4(1.);}', ok=False, valid=False)

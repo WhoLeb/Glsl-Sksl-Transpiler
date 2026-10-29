@@ -69,3 +69,7 @@ where skslc.exe must sit in the same folder as Skia's `sksl_*.sksl` module files
 # Derivative check (`check_derivatives.py`)
 
 `python tests/check_derivatives.py --transpiler build/glsl-to-sksl.exe` renders shaders that use dFdx, dFdy and fwidth with Skia's CPU backend and compares every pixel with GPU fine-derivative semantics computed from the rendered argument values. All comparisons must match exactly. Requires skia-python from `requirements-validation.txt`.
+
+# Array check (`check_arrays.py`)
+
+`python tests/check_arrays.py --transpiler build/glsl-to-sksl.exe` renders shaders that construct, assign, compare, select, sequence and return arrays (and structs containing arrays) with Skia's CPU backend and compares each result with the value GLSL defines, including cases where evaluation order or skipped operands would change the result. It also checks that generated names keep the shader's identifiers. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.

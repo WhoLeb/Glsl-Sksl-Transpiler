@@ -18,7 +18,8 @@ int main(){
     check(shifts.diagnostics.size()>=1 && shifts.diagnostics[0].code=="unsupported.operator");
     auto entry=glsl_sksl::transpile("#version 100\nprecision mediump float;void main(void){gl_FragColor=vec4(1.0);}");
     check(entry.ok());
-    check(entry.source.find("entry()")!=std::string::npos);
+    check(entry.source.find("return half4(fragColor);")!=std::string::npos);
+    check(entry.source.find("transpiler_")==std::string::npos);
     check(glsl_sksl::transpile("#version 100  // legacy\r\nvoid main(void){gl_FragColor=vec4(1.0);}").ok());
     check(glsl_sksl::transpile("# version 100\nvoid main(){gl_FragColor=vec4(1);}").ok());
     check(glsl_sksl::transpile("#version   100\nvoid main(){gl_FragColor=vec4(1);}").ok());

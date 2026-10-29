@@ -108,8 +108,16 @@ void intText(std::string& out, std::uint64_t raw) {
 
 class Emitter {
 public:
-    Emitter(const ast::TranslationUnit& unit, const sema::Program& program, std::string prefix, DiagnosticSink& sink)
-        :unit(unit),program(program),prefix(std::move(prefix)),helpers(this->prefix),sink(sink){}
+    Emitter(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink)
+        :unit(unit),program(program),helpers([this](const std::string& builtin){return fresh("glsl_"+builtin);}),sink(sink) {
+        // Names the shader uses keep their spelling; generated names avoid all of them.
+        for(const auto& t:tokens)if(t.kind==TokenKind::Identifier)taken.insert(t.text);
+        taken.insert(kReserved.begin(),kReserved.end());
+        taken.insert("main");
+        colorName=program.outputs.empty()?fresh("fragColor"):userName(program.outputs[0]->name);
+        coordName=fresh("coord"); fragCoordName=fresh("fragCoord"); quadName=fresh("quad");
+        retName=fresh("ret"); doneName=fresh("done"); resultName=fresh("result");
+    }
 
     std::string run() {
         if(!program.main)return {};
@@ -124,13 +132,12 @@ public:
         visitOrder(program.main,seen,order);
         for(const sema::Function* f:order)if(functions[f].fragCoord)usesFragCoord=true;
 
-        std::string structs, globals, code, entry;
+        std::string structs, globals, code;
         out=&structs; structDefinitions();
         out=&globals; generatedGlobals(); globalDeclarations();
         out=&code;
-        for(const sema::Function* f:order)function(*f);
-        out=&entry; mainFunction();
-        return helpers.definitions()+structs+globals+code+entry;
+        for(const sema::Function* f:order)function(*f);   // main last: it becomes the SkSL main
+        return helpers.definitions()+structs+globals+code;
     }
 
 private:
@@ -144,7 +151,10 @@ private:
 
     const ast::TranslationUnit& unit;
     const sema::Program& program;
-    const std::string prefix;
+    mutable std::set<std::string> taken;                    // identifiers of the shader and generated names
+    mutable std::map<std::string,std::string> renamed;      // SkSL-reserved identifiers -> replacement
+    mutable std::map<std::pair<std::string,int>,std::string> laneNames;
+    std::string colorName, coordName, fragCoordName, quadName, retName, doneName, resultName;
     BuiltinHelpers helpers;
     DiagnosticSink& sink;
     std::map<const sema::Function*,FunctionInfo> functions;
@@ -157,7 +167,11 @@ private:
     int tailLane=0;                         // lane whose returns become assignments (tail of a quad function)
     std::set<const Symbol*> shared;         // indices of loops that all lanes run together
     std::set<const Symbol*> varying;        // locals whose value can differ between the pixels of a quad
-    std::unordered_map<const Expr*,std::string> hoisted;    // derivative or quad call -> temporary
+    std::unordered_map<const Expr*,std::string> hoisted;    // derivative or quad call -> temporary, all lanes
+    std::unordered_map<const Expr*,std::string> values[4];  // per lane: values computed before the current statement
+    std::vector<std::pair<int,const Expr*>> pending;        // entries of values, in the order computed
+    std::set<const Expr*> reported;
+    std::vector<const ast::Declarator*> globalArrays;       // global arrays initialized at the start of main
     int temps=0;
     std::string* out=nullptr;
     int indent=0;
@@ -171,16 +185,27 @@ private:
     void error(Loc at, const std::string& code, const std::string& message, const std::string& suggestion={}) {
         sink.error(at,"unsupported."+code,"Unsupported "+message,suggestion);
     }
-    std::string temp(){return prefix+"t"+std::to_string(++temps);}
-    // Name of a variable in another pixel of the quad. Generated names start with the prefix,
-    // which no identifier of the shader starts with, so neither form can collide.
+    // A generated name that no identifier of the shader and no other generated name uses.
+    std::string fresh(const std::string& base) const {
+        std::string name=base;
+        for(int n=2;taken.count(name);++n)name=base+"_"+std::to_string(n);
+        taken.insert(name);
+        return name;
+    }
+    std::string temp(){return fresh("tmp"+std::to_string(++temps));}
+    // Name of a variable in another pixel of the quad: x, x_L1, x_L2, x_L3.
     std::string laneName(const std::string& name, int lane) const {
         if(lane==0)return name;
-        if(name.compare(0,prefix.size(),prefix)==0)return name+"_L"+std::to_string(lane);
-        return prefix+"L"+std::to_string(lane)+"_"+name;
+        const auto key=std::make_pair(name,lane);
+        const auto it=laneNames.find(key);
+        if(it!=laneNames.end())return it->second;
+        return laneNames[key]=fresh(name+"_L"+std::to_string(lane));
     }
     std::string userName(const std::string& name) const {
-        return kReserved.count(name)||name.compare(0,3,"sk_")==0?prefix+"u_"+name:name;
+        if(!kReserved.count(name) && name.compare(0,3,"sk_")!=0)return name;
+        const auto it=renamed.find(name);
+        if(it!=renamed.end())return it->second;
+        return renamed[name]=fresh(name.compare(0,3,"sk_")==0?"_"+name:name+"_");
     }
     std::string typeName(const Type& t) const {
         if(t.base==Type::Struct) {
@@ -199,18 +224,17 @@ private:
         if(!s)return "?";
         switch(s->storage) {
         case Storage::BuiltIn:
-            if(s->name=="gl_FragColor")return laneName(prefix+"color",lane);
-            if(s->name=="gl_FragCoord")return laneName(prefix+"fragCoord",lane);
+            if(s->name=="gl_FragColor")return laneName(colorName,lane);
+            if(s->name=="gl_FragCoord")return laneName(fragCoordName,lane);
             return s->name;
-        case Storage::Output: return laneName(prefix+"color",lane);
+        case Storage::Output: return laneName(colorName,lane);
         case Storage::Uniform: return s->name;
         case Storage::Global: return s->constQualified?userName(s->name):laneName(userName(s->name),lane);
         default: return shared.count(s)?userName(s->name):laneName(userName(s->name),lane);
         }
     }
+    // A function that computes derivatives has one version, which takes all four lanes.
     std::string functionName(const sema::Function* f, int lane) {
-        if(f==program.main)return prefix+"entry";
-        if(quad(f))return prefix+"Q_"+f->name;
         if(laneFunction(f))return laneName(userName(f->name),lane);
         return userName(f->name);
     }
@@ -487,6 +511,10 @@ private:
             o+=laneName(h->second,lane);
             return;
         }
+        if(const std::string* v=computed(e,lane)) {
+            o+=*v;
+            return;
+        }
         const bool parens=e.parenthesized||precedence(e)<context;
         if(parens)o+='(';
         node(o,e,lane);
@@ -502,16 +530,21 @@ private:
         case ExprKind::Postfix: expr(o,*e.operands[0],lane,16); o+=e.text; break;
         case ExprKind::Binary:
             if(folded(o,e))break;
+            if((e.text=="=="||e.text=="!=") && aggregate(e.operands[0]->type)){comparison(o,e,lane);break;}
             expr(o,*e.operands[0],lane,binaryPrecedence(e.text));
             o+=" "+e.text+" ";
             expr(o,*e.operands[1],lane,binaryPrecedence(e.text)+1);
             break;
         case ExprKind::Assign:
+            if(aggregate(e.type))
+                notExpressible(e,"assignment","SkSL cannot assign arrays (or structs containing arrays) as a whole");
             expr(o,*e.operands[0],lane,15);
             o+=" "+e.text+" ";
             expr(o,*e.operands[1],lane,2);
             break;
         case ExprKind::Ternary:
+            if(aggregate(e.type))
+                notExpressible(e,"conditional","the result of ?: cannot be an array (or a struct containing arrays) in SkSL");
             expr(o,*e.operands[0],lane,4);
             o+=" ? ";
             expr(o,*e.operands[1],lane,2);
@@ -519,16 +552,23 @@ private:
             expr(o,*e.operands[2],lane,3);
             break;
         case ExprKind::Call: call(o,e,lane); break;
-        case ExprKind::Constructor: constructor(o,e,lane); break;
+        case ExprKind::Constructor:
+            if(e.type.isArray())
+                notExpressible(e,"array constructor","SkSL has no array constructors");
+            constructor(o,e,lane);
+            break;
         case ExprKind::Index:
+            if(foldedElement(o,e))break;
             expr(o,*e.operands[0],lane,16);
             o+='[';
             expr(o,*e.operands[1],lane,0);
             o+=']';
             break;
-        case ExprKind::Field: field(o,e,lane); break;
+        case ExprKind::Field: if(!foldedElement(o,e))field(o,e,lane); break;
         case ExprKind::Method: length(o,e); break;
         case ExprKind::Comma:
+            if(unexpressible(e))
+                notExpressible(e,"sequence","the operands of a comma expression cannot be arrays (or structs containing arrays) in SkSL");
             expr(o,*e.operands[0],lane,1);
             o+=", ";
             expr(o,*e.operands[1],lane,2);
@@ -609,6 +649,7 @@ private:
     }
     GLSL_SKSL_NOINLINE void call(std::string& o, const Expr& e, int lane) {
         const sema::Function* f=e.function;
+        if(aggregate(e.type))notExpressible(e,"call","SkSL functions cannot return arrays (or structs containing arrays)");
         if(!f)o+=e.text;
         else if(f->builtin) {
             if(sema::isDerivative(f->name))
@@ -635,6 +676,280 @@ private:
         o+=std::to_string(t.isArray()?t.arrays.front():t.isMatrix()?t.columns:t.rows);
     }
 
+    // ------------------------------------------------------------------ arrays
+    // SkSL has no array constructors and cannot initialize, assign, compare, select or sequence
+    // arrays and structs containing arrays, nor return them from functions. Such values are
+    // computed before the statement that uses them, element by element and in GLSL's evaluation
+    // order; comparisons compare the elements.
+    static bool aggregate(const Type& t){return t.containsArray();}
+    void valueError(const Expr& e, const std::string& code, const std::string& message, const std::string& suggestion) {
+        if(reported.insert(&e).second)error(e.loc,code,message,suggestion);
+    }
+    // A value the transpiler would compute in statements before its own, where there are none.
+    void notExpressible(const Expr& e, const std::string& what, const std::string& why) {
+        valueError(e,"array-value",what+" "+quoted(e)+": "+why+", and the transpiler computes such values in statements before the one that uses them, "
+            "which this position does not allow (a for loop header, a global initializer or an argument of a function that computes derivatives)",
+            "compute the value into a variable before this statement and use the variable");
+    }
+    // Elements of constant arrays are written as their values: the arrays themselves become
+    // variables, which global initializers cannot read.
+    bool foldedElement(std::string& o, const Expr& e) const {
+        return e.value && aggregate(e.operands[0]->type) && constantText(o,*e.value);
+    }
+    bool foldsToConstant(const Expr& e) const {
+        std::string s;
+        return (e.kind==ExprKind::Index||e.kind==ExprKind::Field) && foldedElement(s,e);
+    }
+    static std::size_t parts(const Type& t){return t.isArray()?static_cast<std::size_t>(t.arrays[0]):t.structDef->fields.size();}
+    static Type partType(const Type& t, std::size_t i){return t.isArray()?t.element():t.structDef->fields[i].type;}
+    std::string part(const Type& t, std::size_t i) const {
+        return t.isArray()?"["+std::to_string(i)+"]":"."+userName(t.structDef->fields[i].name);
+    }
+    std::string declaration(const Type& t, const std::string& name) const {return typeName(t)+" "+name+dims(t);}
+
+    // Values SkSL cannot write where they occur.
+    static bool unexpressible(const Expr& e) {
+        switch(e.kind) {
+        case ExprKind::Constructor: return e.type.isArray();
+        case ExprKind::Call: return aggregate(e.type);
+        case ExprKind::Comma: return aggregate(e.type)||aggregate(e.operands[0]->type);
+        case ExprKind::Ternary: case ExprKind::Assign: return aggregate(e.type);
+        default: return false;
+        }
+    }
+    // Values computed before the current statement, per lane, until release().
+    const std::string* computed(const Expr& e, int lane) const {
+        const auto it=values[lane].find(&e);
+        return it==values[lane].end()?nullptr:&it->second;
+    }
+    void compute(const Expr& e, int lane, const std::string& text) {
+        values[lane][&e]=text;
+        pending.emplace_back(lane,&e);
+    }
+    std::size_t mark() const {return pending.size();}
+    void release(std::size_t m) {
+        for(;pending.size()>m;pending.pop_back())values[pending.back().first].erase(pending.back().second);
+    }
+    bool needsPrelude(const Expr& e, int lane) const {
+        if(hoisted.count(&e) || computed(e,lane) || foldsToConstant(e) || e.kind==ExprKind::Method)return false;
+        if(unexpressible(e))return true;
+        for(const auto& o:e.operands)if(needsPrelude(*o,lane))return true;
+        return false;
+    }
+
+    // Emits, before the statement being written, what SkSL cannot compute inside `e`.
+    void prepare(const Expr& e, int lane) {
+        if(!needsPrelude(e,lane))return;
+        switch(e.kind) {
+        case ExprKind::Binary:
+            if(e.text=="&&"||e.text=="||"){shortCircuit(e,lane);return;}
+            break;
+        case ExprKind::Ternary:
+            if(!aggregate(e.type)){conditional(e,lane);return;}
+            prepare(*e.operands[0],lane);
+            materialize(e,lane);
+            return;
+        case ExprKind::Comma:
+            expressionStatement(*e.operands[0],lane);
+            prepare(*e.operands[1],lane);
+            compute(e,lane,"("+expr(*e.operands[1],lane,0)+")");
+            return;
+        case ExprKind::Constructor: case ExprKind::Assign:
+            if(unexpressible(e)){materialize(e,lane);return;}
+            break;
+        default: break;
+        }
+        prepareOperands(e,lane);
+        if(unexpressible(e))materialize(e,lane);   // a call that returns an array
+    }
+    static bool assignedOperand(const Expr& e, std::size_t i) {
+        if(e.kind==ExprKind::Assign)return i==0 && e.text=="=";
+        return e.kind==ExprKind::Call && e.function && i<e.function->params.size() && e.function->params[i].direction==Direction::Out;
+    }
+    static bool readWrittenOperand(const Expr& e, std::size_t i) {
+        if(e.kind==ExprKind::Assign)return i==0;
+        return e.kind==ExprKind::Call && e.function && i<e.function->params.size() && e.function->params[i].direction==Direction::InOut;
+    }
+    // Operands are evaluated left to right. An operand evaluated before a value that moves before
+    // the statement is computed first itself when the order could change a result.
+    void prepareOperands(const Expr& e, int lane) {
+        std::size_t last=e.operands.size();
+        for(std::size_t i=0;i<e.operands.size();++i)if(needsPrelude(*e.operands[i],lane))last=i;
+        if(last==e.operands.size())return;
+        for(std::size_t i=0;i<last;++i) {
+            const Expr& o=*e.operands[i];
+            Access before, after;
+            access(o,before,nullptr,false);
+            for(std::size_t j=i+1;j<=last;++j)access(*e.operands[j],after,nullptr,false);
+            // The target of an assignment or out argument is written after everything is evaluated.
+            if(assignedOperand(e,i) || !conflict(before,after))prepare(o,lane);
+            else if(readWrittenOperand(e,i))
+                valueError(o,"evaluation-order",quoted(o)+" in "+quoted(e)+": the transpiler must compute part of the expression before the statement, "
+                    "and that part changes "+quoted(o)+", which the expression reads first",
+                    "compute the later part in a separate statement before this one");
+            else spill(o,lane);
+        }
+        prepare(*e.operands[last],lane);
+    }
+    void spill(const Expr& o, int lane) {
+        prepare(o,lane);
+        const std::string t=temp();
+        if(aggregate(o.type)) {
+            line(declaration(o.type,t)+";");
+            assignParts(t,o.type,o,lane);
+        } else line(declaration(o.type,t)+" = "+expr(o,lane,2)+";");
+        compute(o,lane,t);
+    }
+    void materialize(const Expr& e, int lane) {
+        const std::string t=temp();
+        line(declaration(e.type,t)+";");
+        assignParts(t,e.type,e,lane);
+        compute(e,lane,t);
+    }
+    // && and || evaluate their right operand only when needed: when the part that moves before
+    // the statement has side effects, the operator becomes an if.
+    void shortCircuit(const Expr& e, int lane) {
+        const Expr& right=*e.operands[1];
+        if(!needsPrelude(right,lane) || !sideEffects(right)){prepareOperands(e,lane);return;}
+        prepare(*e.operands[0],lane);
+        const std::string t=temp();
+        line("bool "+t+" = "+expr(*e.operands[0],lane,2)+";");
+        line("if ("+std::string(e.text=="||"?"!":"")+t+") {");
+        branch(right,t,lane);
+        line("}");
+        compute(e,lane,t);
+    }
+    // Likewise ?: evaluates one of its branches.
+    void conditional(const Expr& e, int lane) {
+        const Expr& a=*e.operands[1];
+        const Expr& b=*e.operands[2];
+        if(!(needsPrelude(a,lane)||needsPrelude(b,lane)) || !(sideEffects(a)||sideEffects(b))){prepareOperands(e,lane);return;}
+        prepare(*e.operands[0],lane);
+        const std::string t=e.type.base==Type::Void?std::string():temp();
+        if(!t.empty())line(declaration(e.type,t)+";");
+        line("if ("+expr(*e.operands[0],lane,0)+") {");
+        branch(a,t,lane);
+        line("} else {");
+        branch(b,t,lane);
+        line("}");
+        compute(e,lane,t);
+    }
+    void branch(const Expr& value, const std::string& target, int lane) {
+        ++indent;
+        if(target.empty())expressionStatement(value,lane);
+        else assignParts(target,value.type,value,lane);
+        --indent;
+    }
+
+    // Writes `value` into `target`, of type `t`, in statements of their own.
+    void assignParts(const std::string& target, const Type& t, const Expr& value, int lane) {
+        if(!aggregate(t)) {
+            const std::size_t m=mark();
+            prepare(value,lane);
+            line(target+" = "+expr(value,lane,2)+";");
+            release(m);
+            return;
+        }
+        if(const std::string* s=computed(value,lane)){copyParts(target,t,*s);return;}
+        switch(value.kind) {
+        case ExprKind::Constructor:
+            for(std::size_t i=0;i<value.operands.size();++i)assignParts(target+part(t,i),partType(t,i),*value.operands[i],lane);
+            return;
+        case ExprKind::Ternary: {
+            const std::size_t m=mark();
+            prepare(*value.operands[0],lane);
+            line("if ("+expr(*value.operands[0],lane,0)+") {");
+            release(m);
+            ++indent; assignParts(target,t,*value.operands[1],lane); --indent;
+            line("} else {");
+            ++indent; assignParts(target,t,*value.operands[2],lane); --indent;
+            line("}");
+            return;
+        }
+        case ExprKind::Comma:
+            expressionStatement(*value.operands[0],lane);
+            assignParts(target,t,*value.operands[1],lane);
+            return;
+        case ExprKind::Assign:
+            assignStatement(value,lane);
+            copyParts(target,t,expr(*value.operands[0],lane,16));
+            return;
+        case ExprKind::Call: {
+            // The result is the function's last, out parameter.
+            const std::size_t m=mark();
+            prepareOperands(value,lane);
+            std::string call=functionName(value.function,lane);
+            arguments(call,value,0,lane);
+            call.insert(call.size()-1,(value.operands.empty()?"":", ")+target);
+            line(call+";");
+            release(m);
+            return;
+        }
+        default:
+            copyParts(target,t,expr(value,lane,16));   // a variable, element or field
+        }
+    }
+    void copyParts(const std::string& target, const Type& t, const std::string& source) {
+        if(!aggregate(t)){line(target+" = "+source+";");return;}
+        for(std::size_t i=0;i<parts(t);++i)copyParts(target+part(t,i),partType(t,i),source+part(t,i));
+    }
+    // Arrays and structs containing arrays are compared element by element. The operands are
+    // variables, elements, fields or temporaries, so repeating them has no effect.
+    void comparison(std::string& o, const Expr& e, int lane) {
+        std::vector<std::string> leaves;
+        compareParts(expr(*e.operands[0],lane,16),expr(*e.operands[1],lane,16),e.operands[0]->type,e.text,leaves);
+        o+='(';
+        for(std::size_t i=0;i<leaves.size();++i)o+=(i?(e.text=="=="?" && ":" || "):"")+leaves[i];
+        o+=')';
+    }
+    void compareParts(const std::string& l, const std::string& r, const Type& t, const std::string& op, std::vector<std::string>& leaves) {
+        if(!aggregate(t)){leaves.push_back(l+" "+op+" "+r);return;}
+        for(std::size_t i=0;i<parts(t);++i)compareParts(l+part(t,i),r+part(t,i),partType(t,i),op,leaves);
+    }
+
+    // Assignment of a whole array or struct containing arrays, as a statement.
+    void assignStatement(const Expr& e, int lane) {
+        const Expr& target=*e.operands[0];
+        const Expr& value=*e.operands[1];
+        Access a;
+        access(value,a,nullptr,false);
+        const Symbol* r=root(target);
+        // A value that reads or changes the target is computed into a temporary first, so no element
+        // is overwritten before it is read. Variables are either the target itself or disjoint from it.
+        const bool variable=root(value) && !sideEffects(value);
+        const bool overlap=!variable && (a.reads.count(r)||a.writes.count(r)||((a.readsGlobals||a.writesGlobals) && perPixel(r)));
+        const std::string text=expr(target,lane,16);
+        if(!overlap){assignParts(text,target.type,value,lane);return;}
+        const std::string t=temp();
+        line(declaration(target.type,t)+";");
+        assignParts(t,target.type,value,lane);
+        copyParts(text,target.type,t);
+    }
+    void declare(const ast::Declarator& v, int lane) {
+        const Symbol* s=v.symbol;
+        if(v.init && aggregate(s->type)) {
+            line(declaration(s->type,symbolName(s,lane))+";");
+            assignParts(symbolName(s,lane),s->type,*v.init,lane);
+            return;
+        }
+        const std::size_t m=mark();
+        if(v.init)prepare(*v.init,lane);
+        line(declarator(v,lane)+";");
+        release(m);
+    }
+    void expressionStatement(const Expr& e, int lane) {
+        if(e.kind==ExprKind::Assign && e.text=="=" && aggregate(e.type)){assignStatement(e,lane);return;}
+        if(e.kind==ExprKind::Comma && needsPrelude(e,lane)) {
+            expressionStatement(*e.operands[0],lane);
+            expressionStatement(*e.operands[1],lane);
+            return;
+        }
+        const std::size_t m=mark();
+        prepare(e,lane);
+        if(!computed(e,lane))line(expr(e,lane)+";");   // otherwise the prelude was the statement
+        release(m);
+    }
+
     // ------------------------------------------------------------------ statements, one lane
     std::string declarator(const ast::Declarator& v, int lane) {
         const Symbol* s=v.symbol;
@@ -646,7 +961,7 @@ private:
         }
         return text;
     }
-    std::string done(int lane) const {return laneName(prefix+"done",lane);}
+    std::string done(int lane) const {return laneName(doneName,lane);}
     bool rewritingReturns(int lane) const {return lane>0 && tailLane==lane;}
 
     void stmt(const Stmt& s, int lane) {
@@ -657,9 +972,9 @@ private:
             line("}");
             break;
         case StmtKind::Declaration:
-            for(const auto& v:s.decl->declarators)if(v.symbol)line(declarator(v,lane)+";");
+            for(const auto& v:s.decl->declarators)if(v.symbol)declare(v,lane);
             break;
-        case StmtKind::Expression: line(expr(*s.expr,lane)+";"); break;
+        case StmtKind::Expression: expressionStatement(*s.expr,lane); break;
         case StmtKind::If: ifStatement(s,lane); break;
         case StmtKind::Switch: switchStatement(s,lane,false); break;
         case StmtKind::For: forStatement(s,lane,false); break;
@@ -686,7 +1001,10 @@ private:
         else stmt(s,lane);
     }
     void ifStatement(const Stmt& s, int lane) {
+        const std::size_t m=mark();
+        prepare(*s.expr,lane);
         line("if ("+expr(*s.expr,lane)+") {");
+        release(m);
         ++indent; contents(*s.then,lane); --indent;
         if(s.otherwise) {
             line("} else {");
@@ -695,7 +1013,10 @@ private:
         line("}");
     }
     void switchStatement(const Stmt& s, int lane, bool synced) {
+        const std::size_t m=mark();
+        prepare(*s.expr,lane);
         line("switch ("+expr(*s.expr,lane)+") {");
+        release(m);
         ++indent;
         for(const auto& x:s.body) {
             if(x->kind==StmtKind::Case) {
@@ -731,12 +1052,19 @@ private:
         line("}");
     }
     void returnStatement(const Stmt& s, int lane) {
-        if(rewritingReturns(lane)) {
-            if(s.expr)line(laneName(prefix+"ret",lane)+" = "+expr(*s.expr,lane)+";");
-            line(done(lane)+" = true;");
+        if(current==program.main){line("return half4("+colorName+");");return;}
+        if(s.expr && returnsAggregate(*current)) {
+            assignParts(resultName,current->returnType,*s.expr,lane);
+            line("return;");
             return;
         }
-        line(s.expr?"return "+expr(*s.expr,lane)+";":"return;");
+        const std::size_t m=mark();
+        if(s.expr)prepare(*s.expr,lane);
+        if(rewritingReturns(lane)) {
+            if(s.expr)line(laneName(retName,lane)+" = "+expr(*s.expr,lane)+";");
+            line(done(lane)+" = true;");
+        } else line(s.expr?"return "+expr(*s.expr,lane)+";":"return;");
+        release(m);
     }
 
     // ------------------------------------------------------------------ statements, all lanes together
@@ -758,7 +1086,7 @@ private:
             for(const auto& v:s.decl->declarators) {
                 if(!v.symbol)continue;
                 if(v.init)hoistStatement(*v.init,nullptr,v.init.get(),false);
-                for(int lane=0;lane<4;++lane)line(declarator(v,lane)+";");
+                for(int lane=0;lane<4;++lane)declare(v,lane);
             }
             return;
         case StmtKind::Expression: {
@@ -766,21 +1094,29 @@ private:
             const bool assign=e.kind==ExprKind::Assign;
             hoistStatement(e,assign?&e:nullptr,assign?e.operands[1].get():&e,!assign);
             if(isQuadCall(e))return;   // the hoisted call is the statement
-            for(int lane=0;lane<4;++lane)line(expr(e,lane)+";");
+            for(int lane=0;lane<4;++lane)expressionStatement(e,lane);
             return;
         }
         case StmtKind::Return:
             if(s.expr)hoistStatement(*s.expr,nullptr,s.expr.get(),false);
-            if(current==program.main){line("return;");return;}
-            if(s.expr)for(int lane=1;lane<4;++lane)line(laneName(prefix+"ret",lane)+" = "+expr(*s.expr,lane)+";");
-            line(s.expr?"return "+expr(*s.expr,0)+";":"return;");
+            if(current==program.main){returnStatement(s,0);return;}
+            if(s.expr)for(int lane=1;lane<4;++lane) {
+                const std::size_t m=mark();
+                prepare(*s.expr,lane);
+                line(laneName(retName,lane)+" = "+expr(*s.expr,lane)+";");
+                release(m);
+            }
+            returnStatement(s,0);
             return;
         case StmtKind::Break: line("break;"); return;
         case StmtKind::Continue: line("continue;"); return;
-        case StmtKind::If:
+        case StmtKind::If: {
             hoistStatement(*s.expr,nullptr,nullptr,false);
             if(!uniform(*s.expr)){divergent(s);return;}
+            const std::size_t m=mark();
+            prepare(*s.expr,0);
             line("if ("+expr(*s.expr,0)+") {");
+            release(m);
             ++indent; syncContents(*s.then); --indent;
             if(s.otherwise) {
                 line("} else {");
@@ -788,6 +1124,7 @@ private:
             }
             line("}");
             return;
+        }
         case StmtKind::Switch:
             hoistStatement(*s.expr,nullptr,nullptr,false);
             if(!uniform(*s.expr)){divergent(s);return;}
@@ -871,11 +1208,14 @@ private:
             const std::string t=temp();
             for(int lane=0;lane<4;++lane) {
                 v[lane]=laneName(t,lane);
+                const std::size_t m=mark();
+                prepare(a,lane);
                 line(T+" "+v[lane]+" = "+expr(a,lane,2)+";");
+                release(m);
             }
         }
         auto difference=[&](const std::string& name, int hi, int lo, const char* axis) {
-            line(T+" "+name+" = ("+v[hi]+" - "+v[lo]+") * "+prefix+"quad."+axis+";");
+            line(T+" "+name+" = ("+v[hi]+" - "+v[lo]+") * "+quadName+"."+axis+";");
         };
         auto dx=[&](const std::string& t) {
             difference(t,1,0,"x"); line(T+" "+laneName(t,1)+" = "+t+";");
@@ -898,12 +1238,15 @@ private:
     }
     GLSL_SKSL_NOINLINE void hoistQuadCall(const Expr& e) {
         const sema::Function& f=*e.function;
+        const std::size_t m=mark();
+        for(int lane=0;lane<4;++lane)for(const auto& o:e.operands)prepare(*o,lane);
         std::string args;
         for(std::size_t i=0;i<e.operands.size();++i)
             for(int lane=0;lane<4;++lane) {
                 if(!args.empty())args+=", ";
                 expr(args,*e.operands[i],lane,2);
             }
+        release(m);
         const std::string name=functionName(&f,0);
         if(f.returnType.base==Type::Void) {
             line(name+"("+args+");");
@@ -967,13 +1310,26 @@ private:
     }
 
     // ------------------------------------------------------------------ functions
-    std::string parameterName(const ast::Param& p, std::size_t i, int lane) const {
-        return p.symbol?symbolName(p.symbol,lane):laneName(prefix+"p"+std::to_string(i),lane);
+    std::map<const ast::Param*,std::string> unnamed;
+    std::string parameterName(const ast::Param& p, std::size_t i, int lane) {
+        if(p.symbol)return symbolName(p.symbol,lane);
+        auto it=unnamed.find(&p);
+        if(it==unnamed.end())it=unnamed.emplace(&p,fresh("p"+std::to_string(i))).first;
+        return laneName(it->second,lane);
     }
-    std::string parameter(const sema::Function& f, std::size_t i, int lane) const {
+    std::string parameter(const sema::Function& f, std::size_t i, int lane) {
         const sema::Param& p=f.params[i];
         const char* direction=p.direction==Direction::Out?"out ":p.direction==Direction::InOut?"inout ":"";
         return direction+typeName(p.type)+" "+parameterName(f.definition->params[i],i,lane)+dims(p.type);
+    }
+    // SkSL functions cannot return arrays or structs containing arrays: the value is returned
+    // through an out parameter instead.
+    static bool returnsAggregate(const sema::Function& f){return aggregate(f.returnType);}
+    // The GLSL main becomes the SkSL main, which returns the color.
+    void mainSignature() {
+        line("half4 main(float2 "+coordName+") {");
+        ++indent;
+        mainPrologue();
     }
     void function(const sema::Function& f) {
         current=&f;
@@ -982,10 +1338,19 @@ private:
             quadFunction(f);
             return;
         }
+        if(&f==program.main) {
+            mainSignature();
+            block(f.definition->body->body,0,0);
+            line("return half4("+colorName+");");
+            --indent;
+            line("}");
+            return;
+        }
         const int copies=laneFunction(&f)?4:1;
         for(int lane=0;lane<copies;++lane) {
-            std::string signature=typeName(f.returnType)+" "+functionName(&f,lane)+"(";
+            std::string signature=(returnsAggregate(f)?"void":typeName(f.returnType))+" "+functionName(&f,lane)+"(";
             for(std::size_t i=0;i<f.params.size();++i)signature+=(i?", ":"")+parameter(f,i,lane);
+            if(returnsAggregate(f))signature+=(f.params.empty()?"out ":", out ")+declaration(f.returnType,resultName);
             line(signature+") {");
             ++indent;
             unwrittenOutputs(f,lane);
@@ -1011,14 +1376,20 @@ private:
     void quadFunction(const sema::Function& f) {
         const bool isMain=&f==program.main;
         computeVarying(f,!isMain);
-        std::string signature=typeName(f.returnType)+" "+functionName(&f,0)+"(";
-        std::string params;
-        for(std::size_t i=0;i<f.params.size();++i)
-            for(int lane=0;lane<4;++lane)params+=(params.empty()?"":", ")+parameter(f,i,lane);
-        if(f.returnType.base!=Type::Void)
-            for(int lane=1;lane<4;++lane)params+=std::string(params.empty()?"":", ")+"out "+typeName(f.returnType)+" "+laneName(prefix+"ret",lane);
-        line(signature+params+") {");
-        ++indent;
+        if(returnsAggregate(f))
+            error(f.loc,"array-return","function "+quotedName(f)+": it computes derivatives and returns "+quoted(toString(f.returnType))+
+                ", which SkSL functions cannot return; the transpiler returns such values through an out parameter only in functions without derivatives",
+                "return the value through an out parameter");
+        if(isMain)mainSignature();
+        else {
+            std::string params;
+            for(std::size_t i=0;i<f.params.size();++i)
+                for(int lane=0;lane<4;++lane)params+=(params.empty()?"":", ")+parameter(f,i,lane);
+            if(f.returnType.base!=Type::Void)
+                for(int lane=1;lane<4;++lane)params+=std::string(params.empty()?"":", ")+"out "+typeName(f.returnType)+" "+laneName(retName,lane);
+            line(typeName(f.returnType)+" "+functionName(&f,0)+"("+params+") {");
+            ++indent;
+        }
         for(int lane=0;lane<4;++lane)unwrittenOutputs(f,lane);
         const auto& body=f.definition->body->body;
         std::size_t last=0;
@@ -1043,6 +1414,7 @@ private:
             }
         }
         if(tail<body.size())block(body,tail,0);
+        if(isMain)line("return half4("+colorName+");");
         --indent;
         line("}");
     }
@@ -1058,14 +1430,11 @@ private:
     // ------------------------------------------------------------------ declarations
     void nameStructs() {
         std::set<std::string> used;
-        int n=0;
         for(const auto& def:program.structs) {
             if(def.block)continue;
-            std::string name=def.name.empty()?prefix+"S"+std::to_string(++n):userName(def.name);
-            if(!used.insert(name).second) {
-                name=prefix+"S"+std::to_string(++n)+"_"+def.name;
-                used.insert(name);
-            }
+            std::string name=def.name.empty()?fresh("S"):userName(def.name);
+            if(used.count(name))name=fresh(name);   // structs of the same name in different scopes
+            used.insert(name);
             structNames[&def]=name;
         }
     }
@@ -1081,9 +1450,9 @@ private:
     }
     void generatedGlobals() {
         const int copies=lanes?4:1;
-        for(int lane=0;lane<copies;++lane)line("float4 "+laneName(prefix+"color",lane)+";");
-        if(usesFragCoord||lanes)for(int lane=0;lane<copies;++lane)line("float4 "+laneName(prefix+"fragCoord",lane)+";");
-        if(lanes)line("float2 "+prefix+"quad;");
+        for(int lane=0;lane<copies;++lane)line("float4 "+laneName(colorName,lane)+";");
+        if(usesFragCoord||lanes)for(int lane=0;lane<copies;++lane)line("float4 "+laneName(fragCoordName,lane)+";");
+        if(lanes)line("float2 "+quadName+";");
     }
     void uniformName(const std::string& name, Loc at) {
         if(userName(name)!=name)
@@ -1091,6 +1460,7 @@ private:
                 "rename the uniform");
     }
     static std::string quoted(const std::string& s){return "'"+s+"'";}
+    int globalCopies(const Symbol& s) const {return lanes && !s.constQualified?4:1;}
     static bool rowMajor(const ast::Qualifiers& q) {
         for(const auto& x:q.list)for(const auto& id:x.layout)if(id.name=="row_major")return true;
         return false;
@@ -1118,9 +1488,11 @@ private:
                     if(s->storage==Storage::Uniform) {
                         uniformName(s->name,s->loc);
                         line("uniform "+typeName(s->type)+" "+s->name+dims(s->type)+";");
+                    } else if(s->storage==Storage::Global && v.init && aggregate(s->type)) {
+                        for(int lane=0;lane<globalCopies(*s);++lane)line(declaration(s->type,symbolName(s,lane))+";");
+                        globalArrays.push_back(&v);
                     } else if(s->storage==Storage::Global) {
-                        const int copies=lanes && !s->constQualified?4:1;
-                        for(int lane=0;lane<copies;++lane)line(declarator(v,lane)+";");
+                        for(int lane=0;lane<globalCopies(*s);++lane)line(declarator(v,lane)+";");
                     }
                 }
             } else if(d->kind==DeclKind::Block && d->block->qualifiers.has("uniform")) {
@@ -1134,37 +1506,28 @@ private:
             }
         }
     }
-    void mainFunction() {
-        const std::string coord=prefix+"coord";
-        line("half4 main(float2 "+coord+") {");
-        ++indent;
-        if(lanes)line(prefix+"quad = 1.0 - 2.0 * mod(floor("+coord+"), 2.0);");
+    void mainPrologue() {
+        const std::string& c=coordName;
+        const std::string& q=quadName;
+        if(lanes)line(q+" = 1.0 - 2.0 * mod(floor("+c+"), 2.0);");
         if(usesFragCoord||lanes) {
-            const std::string q=prefix+"quad";
-            line(prefix+"fragCoord = float4("+coord+", 0.0, 1.0);");
+            line(fragCoordName+" = float4("+c+", 0.0, 1.0);");
             if(lanes) {
-                line(laneName(prefix+"fragCoord",1)+" = float4("+coord+".x + "+q+".x, "+coord+".y, 0.0, 1.0);");
-                line(laneName(prefix+"fragCoord",2)+" = float4("+coord+".x, "+coord+".y + "+q+".y, 0.0, 1.0);");
-                line(laneName(prefix+"fragCoord",3)+" = float4("+coord+" + "+q+", 0.0, 1.0);");
+                line(laneName(fragCoordName,1)+" = float4("+c+".x + "+q+".x, "+c+".y, 0.0, 1.0);");
+                line(laneName(fragCoordName,2)+" = float4("+c+".x, "+c+".y + "+q+".y, 0.0, 1.0);");
+                line(laneName(fragCoordName,3)+" = float4("+c+" + "+q+", 0.0, 1.0);");
             }
         }
-        for(int lane=0;lane<(lanes?4:1);++lane)line(laneName(prefix+"color",lane)+" = float4(0);");
-        line(prefix+"entry();");
-        line("return half4("+prefix+"color);");
-        --indent;
-        line("}");
+        for(int lane=0;lane<(lanes?4:1);++lane)line(laneName(colorName,lane)+" = float4(0);");
+        // SkSL global arrays cannot have initializers (const ones become plain variables).
+        for(const ast::Declarator* v:globalArrays)
+            for(int lane=0;lane<globalCopies(*v->symbol);++lane)
+                assignParts(symbolName(v->symbol,lane),v->symbol->type,*v->init,lane);
     }
 };
 }
 
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink) {
-    // Generated names start with a prefix that no identifier of the shader starts with.
-    std::string prefix="transpiler_";
-    auto taken=[&] {
-        for(const auto& t:tokens)if(t.kind==TokenKind::Identifier && t.text.compare(0,prefix.size(),prefix)==0)return true;
-        return false;
-    };
-    while(taken())prefix+="x";
-    return Emitter(unit,program,prefix,sink).run();
+    return Emitter(unit,program,tokens,sink).run();
 }
 }

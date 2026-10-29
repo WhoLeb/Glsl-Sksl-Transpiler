@@ -201,7 +201,6 @@ void mustReportUnsupported() {
         {P+"uniform int n; void main(){switch(n){default: break; case 1: break;} color=vec4(1.);}","unsupported.switch-default"},
         {P+"uniform int n; void main(){for(int i=0;i<2;++i){switch(n){case 0: continue;}} color=vec4(1.);}","unsupported.continue-in-switch"},
         {P+"void main(){color=vec4(gl_FragCoord.z);}","unsupported.frag-coord"},
-        {P+"float[2] f(){return float[2](1.,2.);} void main(){color=vec4(f()[0]);}","unsupported.array-return"},
         // Full source.
         {"#version 310 es\nprecision highp float;\nout vec4 color;\nvoid main(){float a[2][2]; color=vec4(a[0][0]);}","unsupported.array-of-arrays"},
     };
@@ -231,7 +230,7 @@ void details() {
 }
 
 // Built-in replacement helpers: GLSL built-ins without an exact SkSL overload are emitted as
-// generated functions named <prefix><builtin>, defined before the code that calls them.
+// generated functions named glsl_<builtin>, defined before the code that calls them.
 const std::string HP="#version 300 es\nprecision highp float;\nuniform vec4 u;\nout vec4 color;\n";
 
 size_t countOf(const std::string& text, const std::string& needle) {
@@ -296,73 +295,82 @@ void expectRefused(const std::string& shader, const std::string& code, int line)
 void helpers() {
     // sinh is replaced by a helper; the native call must not remain.
     expectSource(HP+"void main(){color=vec4(sinh(u.x));}", __LINE__,
-                 {"float transpiler_sinh(float x)","transpiler_sinh("},
+                 {"float glsl_sinh(float x)","glsl_sinh("},
                  {" sinh("});
 
     // Float abs stays native; int abs gets a helper.
     expectSource(HP+"void main(){color=vec4(abs(u.x), float(abs(int(u.y))), 0., 1.);}", __LINE__,
-                 {"abs(u.x)","int transpiler_abs(int x)"});
+                 {"abs(u.x)","int glsl_abs(int x)"});
 
     // Helper dependencies come before their users: min is used by clamp.
     expectSource(HP+"void main(){ivec2 a=clamp(ivec2(u.xy),0,3); color=vec4(vec2(a),0.,1.);}", __LINE__,
                  {},{},
-                 {"int transpiler_min(int a, int b)",
-                  "int transpiler_clamp(int x, int lo, int hi)",
-                  "int2 transpiler_clamp(int2 x, int lo, int hi)"});
+                 {"int glsl_min(int a, int b)",
+                  "int glsl_clamp(int x, int lo, int hi)",
+                  "int2 glsl_clamp(int2 x, int lo, int hi)"});
 
     // trunc is defined before modf, which calls it.
     expectSource(HP+"void main(){float i; float f=modf(u.x,i); color=vec4(f,i,0.,1.);}", __LINE__,
                  {},{},
-                 {"float transpiler_trunc(float x)","float transpiler_modf(float x, out float i)"});
+                 {"float glsl_trunc(float x)","float glsl_modf(float x, out float i)"});
 
     // mix with a bool vector weight gets a helper; a float weight stays native.
     expectSource(HP+"void main(){color=vec4(mix(u.xy,u.zw,bvec2(true,false)),mix(u.z,u.w,0.5),1.);}", __LINE__,
-                 {"float2 transpiler_mix(float2 x, float2 y, bool2 a)","mix(u.z"});
+                 {"float2 glsl_mix(float2 x, float2 y, bool2 a)","mix(u.z"});
 
     // Matrix helpers use SkSL's square-matrix types.
     expectSource(HP+"void main(){mat3 m=transpose(mat3(u.x)); color=vec4(determinant(m),outerProduct(u.xy,u.zw)[0],1.);}", __LINE__,
-                 {"float3x3 transpiler_transpose(float3x3 m)",
-                  "float transpiler_determinant(float3x3 m)",
-                  "float2x2 transpiler_outerProduct(float2 c, float2 r)"});
+                 {"float3x3 glsl_transpose(float3x3 m)",
+                  "float glsl_determinant(float3x3 m)",
+                  "float2x2 glsl_outerProduct(float2 c, float2 r)"});
 
     // A helper used twice is defined once.
     {
         const std::string s=HP+"void main(){color=vec4(sinh(u.x)+sinh(u.y),0.,0.,1.);}";
         Result r=transpile(s);
-        if(!r.ok() || countOf(r.source,"float transpiler_sinh(float x)")!=1){
+        if(!r.ok() || countOf(r.source,"float glsl_sinh(float x)")!=1){
             ++failures;
-            std::cerr<<"sema_tests.cpp:"<<__LINE__<<": failed: \"float transpiler_sinh(float x)\" is defined exactly once\n";
+            std::cerr<<"sema_tests.cpp:"<<__LINE__<<": failed: \"float glsl_sinh(float x)\" is defined exactly once\n";
             printResult(s,r);
         }
     }
 
-    // A user identifier that starts with the prefix extends the prefix; the helper is not renamed silently.
-    expectSource(HP+"float transpiler_sinh_value=1.; void main(){color=vec4(sinh(u.x)+transpiler_sinh_value);}", __LINE__,
-                 {"transpiler_x","float transpiler_xsinh(float x)"},
-                 {"float transpiler_sinh(float x)"});
+    // A user identifier with a helper's name keeps it; the helper gets another name.
+    expectSource(HP+"float glsl_sinh=1.; void main(){color=vec4(sinh(u.x)+glsl_sinh);}", __LINE__,
+                 {"float glsl_sinh = 1.","float glsl_sinh_2(float x)","glsl_sinh_2(u.x) + glsl_sinh"},
+                 {"float glsl_sinh(float x)"});
 
     // Non-square matrices have no SkSL type and are refused.
     expectRefused(HP+"void main(){mat2x3 m=mat2x3(1.); color=vec4(1.);}", "unsupported.matrix-shape", __LINE__);
     expectRefused(HP+"void main(){color=vec4(outerProduct(u.xyz,u.xy)[0],1.);}", "unsupported.matrix-shape", __LINE__);
+
+    // Functions return arrays through an out parameter.
+    expectSource(HP+"float[2] f(){return float[2](1.,2.);} void main(){color=vec4(f()[0]);}", __LINE__,
+                 {"void f(out float result[2])","result[0] = 1.;","f(tmp1);"},
+                 {"float[2]("});
+    // Names of the shader are kept; generated names avoid them.
+    expectSource(HP+"float coord=.5; void main(){float tmp1=coord; color=vec4(tmp1)+u;}", __LINE__,
+                 {"float4 color;","float coord = .5;","half4 main(float2 coord_2)","float tmp1 = coord;"},
+                 {"transpiler_"});
 }
 
 // Software derivatives: dFdx/dFdy/fwidth are computed from the 2x2 pixel quad, so the shader
 // needs quad lanes only when a derivative is used; refusals cover what cannot be computed.
 void derivatives() {
     expectSource(HP+"void main(){float v=gl_FragCoord.x*u.x; color=vec4(dFdx(v),dFdy(v),fwidth(v),1.);}", __LINE__,
-                 {"transpiler_quad","transpiler_fragCoord_L3","half4 main(float2 transpiler_coord)"},
+                 {"float2 quad;","float4 fragCoord_L3;","half4 main(float2 coord)"},
                  {"dFdx(","dFdy(","fwidth("});
 
     // A derivative inside a helper that returns early after fwidth keeps its statement order.
     expectSource(HP+"float aa(float d){float w=fwidth(d); if(d>w) return 0.; return w;} void main(){color=vec4(aa(gl_FragCoord.x));}", __LINE__,
-                 {"transpiler_Q_aa(","transpiler_ret_L1","transpiler_done_L1"});
+                 {"float aa(float d, float d_L1, float d_L2, float d_L3, out float ret_L1","ret_L1 = w_L1;","bool done_L1 = false;"});
 
     // Coordinate without derivatives: no quad lanes.
     expectSource(HP+"void main(){color=vec4(gl_FragCoord.xy,0.,1.);}", __LINE__,
-                 {"transpiler_fragCoord"}, {"transpiler_quad"});
+                 {"float4 fragCoord;"}, {"float2 quad;"});
     // GLSL ES 1.00 with the extension enabled.
     expectSource("#version 100\n#extension GL_OES_standard_derivatives : enable\nprecision highp float;\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x));}", __LINE__,
-                 {"transpiler_quad"});
+                 {"float2 quad;"});
     // GLSL ES 1.00 without the extension: derivatives are undeclared.
     expectRefused("#version 100\nprecision highp float;\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x));}", "sema.undeclared", __LINE__);
 
@@ -382,6 +390,9 @@ void derivatives() {
     // Constructors are emitted with only the components they need.
     expectSource(HP+"void main(){vec3 a=vec3(u); vec2 b=vec2(mat2(1.)); color=vec4(a.x,b,1.);}", __LINE__,
                  {"float3(u.xyz)","[0][0]"});
+
+    // Arrays returned from a function that computes derivatives are refused.
+    expectRefused(HP+"float[2] g(float x){return float[2](dFdx(x),1.);} void main(){color=vec4(g(gl_FragCoord.x)[0]);}", "unsupported.array-return", __LINE__);
 }
 
 int main() {

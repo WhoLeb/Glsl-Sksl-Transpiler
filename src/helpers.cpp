@@ -89,7 +89,12 @@ std::string BuiltinHelpers::request(const std::string& name, const std::vector<T
         std::string source=generate(name,params);   // dependencies are requested, and emitted, first
         sources.push_back(std::move(source));
     }
-    return prefix+name;
+    return nameOf(name);
+}
+
+std::string BuiltinHelpers::nameOf(const std::string& builtin) {
+    const auto it=names.find(builtin);
+    return it!=names.end()?it->second:names[builtin]=naming(builtin);
 }
 
 std::string BuiltinHelpers::definitions() const {
@@ -99,7 +104,7 @@ std::string BuiltinHelpers::definitions() const {
 }
 
 std::string BuiltinHelpers::generate(const std::string& name, const std::vector<Type>& params) {
-    const std::string fn=prefix+name;
+    const std::string fn=nameOf(name);
     const Type& t=params[0];
     const std::string T=skslType(t);
     // Vector overload that applies the scalar overload to each component.

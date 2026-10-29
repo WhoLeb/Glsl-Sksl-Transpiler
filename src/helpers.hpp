@@ -1,5 +1,6 @@
 #pragma once
 #include "sema.hpp"
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -11,7 +12,8 @@ std::string skslType(const sema::Type& t);   // float2, int3, bool4, float3x3
 
 class BuiltinHelpers {
 public:
-    explicit BuiltinHelpers(std::string prefix):prefix(std::move(prefix)){}
+    // `naming` gives the SkSL name of the helpers that replace a built-in; it is asked once per built-in.
+    explicit BuiltinHelpers(std::function<std::string(const std::string&)> naming):naming(std::move(naming)){}
     static bool needed(const sema::Function& builtin);
     // Name to call instead of the built-in; requests the helper and its dependencies.
     std::string use(const sema::Function& builtin);
@@ -22,7 +24,9 @@ private:
         std::string name; std::vector<sema::Type> params;
         bool operator<(const Key& o) const;
     };
-    std::string prefix;
+    std::function<std::string(const std::string&)> naming;
+    std::map<std::string,std::string> names;
+    std::string nameOf(const std::string& builtin);
     std::set<Key> requested;
     std::vector<std::string> sources;
     std::string request(const std::string& name, const std::vector<sema::Type>& params);

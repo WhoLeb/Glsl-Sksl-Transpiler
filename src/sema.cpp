@@ -1423,9 +1423,7 @@ private:
             if(d.function->body) {
                 for(const auto& p:d.function->params)if(p.symbol)targetType(p.symbol->type,p.loc,"parameter "+quote(p.name));
                 const Type returned=d.function->symbol?d.function->symbol->returnType:Type{};
-                if(targetType(returned,d.function->loc,"return type of "+quote(d.function->name)) && returned.isArray())
-                    unsupported(d.function->loc,"array-return","function "+quote(d.function->name)+": SkSL functions cannot return arrays",
-                        "return the elements through an out parameter, or wrap the array in a struct");
+                targetType(returned,d.function->loc,"return type of "+quote(d.function->name));
                 for(auto& s:d.function->body->body)targetStatement(*s);
                 const Function* fn=d.function->symbol;
                 if(fn && fn->returnType.base!=Type::Void && !returns(*d.function->body))

@@ -1831,9 +1831,9 @@
   {
     "name": "arr_return",
     "file": "arr_return.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "note": "array-returning functions: lower or refuse (decision)",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "returned through an out parameter",
     "source_valid": true
   },
   {
@@ -1909,6 +1909,121 @@
   {
     "name": "arr_const_vec_array",
     "file": "arr_const_vec_array.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_swap_self",
+    "file": "arr_ctor_swap_self.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "constructor reads the assigned array: elements go through a temporary",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_loop_index",
+    "file": "arr_ctor_loop_index.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_const_index_folded",
+    "file": "arr_ctor_const_index_folded.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_nested_args",
+    "file": "arr_ctor_nested_args.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_in_if_condition",
+    "file": "arr_ctor_in_if_condition.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_in_return",
+    "file": "arr_ctor_in_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_global_from_const_elem",
+    "file": "arr_global_from_const_elem.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "const arrays become variables; global initializers read the folded elements",
+    "source_valid": true
+  },
+  {
+    "name": "arr_global_init_with_derivative",
+    "file": "arr_global_init_with_derivative.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_in_derivative_arg",
+    "file": "arr_ctor_in_derivative_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_of_struct_ctor",
+    "file": "arr_of_struct_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_in_quad_function_arg",
+    "file": "arr_ctor_in_quad_function_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_ctor_side_effect_order",
+    "file": "arr_ctor_side_effect_order.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "h() runs before n is read, as in GLSL",
+    "source_valid": true
+  },
+  {
+    "name": "arr_assign_ternary",
+    "file": "arr_assign_ternary.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_init_ternary",
+    "file": "arr_init_ternary.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_compare",
+    "file": "arr_compare.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_assign_nested_in_expr",
+    "file": "arr_assign_nested_in_expr.frag",
     "expect": "accept",
     "diagnostic": "",
     "source_valid": true
@@ -1990,6 +2105,35 @@
     "file": "struct_array_in_struct_ctor.frag",
     "expect": "accept",
     "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_assign",
+    "file": "struct_array_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_self_ctor",
+    "file": "struct_array_self_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_const_global",
+    "file": "struct_array_const_global.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_return",
+    "file": "struct_array_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "returned through an out parameter",
     "source_valid": true
   },
   {
