@@ -1,6 +1,7 @@
 """Compiler-backed fragment corpus. Missing tools fail unless explicitly allowed."""
 import argparse
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -92,8 +93,21 @@ def main():
             run=subprocess.run([args.transpiler,str(source)],capture_output=True,text=True)
             (artifacts/(case['name']+'.stderr')).write_text(run.stderr)
             if case['expect']=='reject':
-                if run.returncode!=1 or run.stdout or case['diagnostic'] not in run.stderr:
+                if run.returncode!=1 or case['diagnostic'] not in run.stderr:
                     raise RuntimeError('Expected diagnostic rejection: '+run.stderr)
+                codes=re.findall(r'error: .*\[([\w.-]+)\]',run.stderr)
+                if run.stdout:
+                    if not run.stdout.startswith('#error GLSL ') or 'half4 main' not in run.stdout:
+                        raise RuntimeError('Expected SkSL with #error lines: '+run.stderr)
+                    (artifacts/(case['name']+'.sksl')).write_text(run.stdout)
+                    if skia:
+                        try:
+                            accepted=skia.RuntimeEffect.MakeForShader(run.stdout)
+                        except RuntimeError:
+                            accepted=None
+                        if accepted: raise RuntimeError('Skia accepted SkSL returned with errors')
+                elif codes and all(code.startswith(('unsupported.','sema.')) for code in codes) and not set(codes)&{'sema.missing-main','sema.main','sema.redefinition'}:
+                    raise RuntimeError('Expected SkSL for a shader that parses: '+run.stderr)
             else:
                 if run.returncode or not run.stdout: raise RuntimeError('Conversion failed: '+run.stderr)
                 (artifacts/(case['name']+'.sksl')).write_text(run.stdout)

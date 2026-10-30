@@ -135,7 +135,9 @@ struct Decl {
 struct TranslationUnit {
     int version=100;
     bool standardDerivatives=false;     // GLSL ES 1.00 with GL_OES_standard_derivatives enabled
+    bool shaderTextureLod=false;        // GLSL ES 1.00 with GL_EXT_shader_texture_lod enabled
     std::vector<DeclPtr> decls;
+    std::vector<Comment> comments;      // every comment of the source, for annotations
 };
 
 // GLSL spelling of an expression, for diagnostics.

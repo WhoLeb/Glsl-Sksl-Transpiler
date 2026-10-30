@@ -143,7 +143,107 @@ const char* const kSpec=R"(
 300 genType dFdx(genType)
 300 genType dFdy(genType)
 300 genType fwidth(genType)
+100 vec4 texture2D(sampler2D,vec2)
+100 vec4 texture2D(sampler2D,vec2,float)
+100 vec4 texture2DProj(sampler2D,vec3)
+100 vec4 texture2DProj(sampler2D,vec3,float)
+100 vec4 texture2DProj(sampler2D,vec4)
+100 vec4 texture2DProj(sampler2D,vec4,float)
+300 vec4 texture(sampler2D,vec2)
+300 vec4 texture(sampler2D,vec2,float)
+300 vec4 textureProj(sampler2D,vec3)
+300 vec4 textureProj(sampler2D,vec3,float)
+300 vec4 textureProj(sampler2D,vec4)
+300 vec4 textureProj(sampler2D,vec4,float)
+100 vec4 textureCube(samplerCube,vec3)
+100 vec4 textureCube(samplerCube,vec3,float)
+100 vec4 texture2DLodEXT(sampler2D,vec2,float)
+100 vec4 texture2DProjLodEXT(sampler2D,vec3,float)
+100 vec4 texture2DProjLodEXT(sampler2D,vec4,float)
+100 vec4 textureCubeLodEXT(samplerCube,vec3,float)
+100 vec4 texture2DGradEXT(sampler2D,vec2,vec2,vec2)
+100 vec4 texture2DProjGradEXT(sampler2D,vec3,vec2,vec2)
+100 vec4 texture2DProjGradEXT(sampler2D,vec4,vec2,vec2)
+100 vec4 textureCubeGradEXT(samplerCube,vec3,vec3,vec3)
+300 vec4 texture(sampler2D,vec2)
+300 vec4 texture(sampler2D,vec2,float)
+300 vec4 textureLod(sampler2D,vec2,float)
+300 vec4 textureGrad(sampler2D,vec2,vec2,vec2)
+300 ivec2 textureSize(sampler2D,int)
+300 vec4 textureOffset(sampler2D,vec2,ivec2)
+300 vec4 textureOffset(sampler2D,vec2,ivec2,float)
+300 vec4 textureLodOffset(sampler2D,vec2,float,ivec2)
+300 vec4 textureGradOffset(sampler2D,vec2,vec2,vec2,ivec2)
+300 vec4 texelFetch(sampler2D,ivec2,int)
+300 vec4 texelFetchOffset(sampler2D,ivec2,int,ivec2)
+300 vec4 texture(sampler3D,vec3)
+300 vec4 texture(sampler3D,vec3,float)
+300 vec4 textureLod(sampler3D,vec3,float)
+300 vec4 textureGrad(sampler3D,vec3,vec3,vec3)
+300 ivec3 textureSize(sampler3D,int)
+300 vec4 textureOffset(sampler3D,vec3,ivec3)
+300 vec4 textureOffset(sampler3D,vec3,ivec3,float)
+300 vec4 textureLodOffset(sampler3D,vec3,float,ivec3)
+300 vec4 textureGradOffset(sampler3D,vec3,vec3,vec3,ivec3)
+300 vec4 texelFetch(sampler3D,ivec3,int)
+300 vec4 texelFetchOffset(sampler3D,ivec3,int,ivec3)
+300 vec4 texture(samplerCube,vec3)
+300 vec4 texture(samplerCube,vec3,float)
+300 vec4 textureLod(samplerCube,vec3,float)
+300 vec4 textureGrad(samplerCube,vec3,vec3,vec3)
+300 ivec2 textureSize(samplerCube,int)
+300 vec4 texture(sampler2DArray,vec3)
+300 vec4 texture(sampler2DArray,vec3,float)
+300 vec4 textureLod(sampler2DArray,vec3,float)
+300 vec4 textureGrad(sampler2DArray,vec3,vec2,vec2)
+300 ivec3 textureSize(sampler2DArray,int)
+300 vec4 textureOffset(sampler2DArray,vec3,ivec2)
+300 vec4 textureOffset(sampler2DArray,vec3,ivec2,float)
+300 vec4 textureLodOffset(sampler2DArray,vec3,float,ivec2)
+300 vec4 textureGradOffset(sampler2DArray,vec3,vec2,vec2,ivec2)
+300 vec4 texelFetch(sampler2DArray,ivec3,int)
+300 vec4 texelFetchOffset(sampler2DArray,ivec3,int,ivec2)
+300 vec4 textureProj(sampler2D,vec3)
+300 vec4 textureProj(sampler2D,vec3,float)
+300 vec4 textureProjLod(sampler2D,vec3,float)
+300 vec4 textureProjGrad(sampler2D,vec3,vec2,vec2)
+300 vec4 textureProjOffset(sampler2D,vec3,ivec2)
+300 vec4 textureProjOffset(sampler2D,vec3,ivec2,float)
+300 vec4 textureProjLodOffset(sampler2D,vec3,float,ivec2)
+300 vec4 textureProjGradOffset(sampler2D,vec3,vec2,vec2,ivec2)
+300 vec4 textureProj(sampler2D,vec4)
+300 vec4 textureProj(sampler2D,vec4,float)
+300 vec4 textureProjLod(sampler2D,vec4,float)
+300 vec4 textureProjGrad(sampler2D,vec4,vec2,vec2)
+300 vec4 textureProjOffset(sampler2D,vec4,ivec2)
+300 vec4 textureProjOffset(sampler2D,vec4,ivec2,float)
+300 vec4 textureProjLodOffset(sampler2D,vec4,float,ivec2)
+300 vec4 textureProjGradOffset(sampler2D,vec4,vec2,vec2,ivec2)
+300 vec4 textureProj(sampler3D,vec4)
+300 vec4 textureProj(sampler3D,vec4,float)
+300 vec4 textureProjLod(sampler3D,vec4,float)
+300 vec4 textureProjGrad(sampler3D,vec4,vec3,vec3)
+300 vec4 textureProjOffset(sampler3D,vec4,ivec3)
+300 vec4 textureProjOffset(sampler3D,vec4,ivec3,float)
+300 vec4 textureProjLodOffset(sampler3D,vec4,float,ivec3)
+300 vec4 textureProjGradOffset(sampler3D,vec4,vec3,vec3,ivec3)
+310 vec4 textureGather(sampler2D,vec2)
+310 vec4 textureGather(sampler2D,vec2,int)
+310 vec4 textureGatherOffset(sampler2D,vec2,ivec2)
+310 vec4 textureGatherOffset(sampler2D,vec2,ivec2,int)
+310 vec4 textureGather(sampler2DArray,vec3)
+310 vec4 textureGather(sampler2DArray,vec3,int)
+310 vec4 textureGatherOffset(sampler2DArray,vec3,ivec2)
+310 vec4 textureGatherOffset(sampler2DArray,vec3,ivec2,int)
+310 vec4 textureGather(samplerCube,vec3)
+310 vec4 textureGather(samplerCube,vec3,int)
 )";
+// Built-ins that later versions removed: GLSL ES 3.00 replaced texture2D, textureCube and the
+// GL_EXT_shader_texture_lod functions by texture, textureLod and textureGrad.
+int lastVersion(const std::string& name) {
+    const bool extension=name.size()>3 && name.compare(name.size()-3,3,"EXT")==0;
+    return name.compare(0,9,"texture2D")==0||name.compare(0,11,"textureCube")==0||extension?100:320;
+}
 
 std::string reason(const std::string& name) {
     static const std::set<std::string> bits={"floatBitsToInt","floatBitsToUint","intBitsToFloat","uintBitsToFloat","packSnorm2x16",
@@ -212,12 +312,21 @@ const Table& table() {
                 shapes={{2,1},{3,1},{4,1}};
             else shapes={{1,1}};
             for(const auto& shape:shapes) {
-                Function f; f.name=name; f.version=version;
+                Function f; f.name=name; f.version=version; f.lastVersion=lastVersion(name);
                 f.returnType=generic(result,shape.first,shape.second);
                 for(const auto& p:params)
                     f.params.push_back({generic(p.first,shape.first,shape.second),p.second?Direction::Out:Direction::In,false,{}});
                 t.add(std::move(f));
             }
+        }
+        for(const char* sampler:{"sampler2D","sampler2DArray"})for(bool component:{false,true}) {
+            Function gather; gather.name="textureGatherOffsets"; gather.version=320;
+            gather.returnType=Type::of(Type::Float,4);
+            Type offsets=Type::of(Type::Int,2); offsets.arrays.push_back(4);
+            gather.params={{generic(sampler,1,1),Direction::In,false,{}},{Type::of(Type::Float,std::string(sampler)=="sampler2D"?2:3),Direction::In,false,{}},
+                {offsets,Direction::In,false,{}}};
+            if(component)gather.params.push_back({Type::of(Type::Int),Direction::In,false,{}});
+            t.add(gather);
         }
         for(int c=2;c<=4;++c)for(int r=2;r<=4;++r) {
             Function outer; outer.name="outerProduct"; outer.version=300;
@@ -239,7 +348,7 @@ const std::map<std::string,Range>& opaqueBuiltins() {
     static const std::map<std::string,Range> names=[] {
         std::map<std::string,Range> m;
         auto add=[&](const char* list,int first,int last){std::istringstream in(list);std::string w;while(in>>w)m[w]={first,last};};
-        add("texture2D texture2DProj texture2DLod texture2DProjLod textureCube textureCubeLod",100,100);
+        add("texture2D texture2DProj textureCube",100,100);
         add("texture textureProj textureLod textureOffset texelFetch texelFetchOffset textureProjOffset textureLodOffset "
             "textureProjLod textureProjLodOffset textureGrad textureGradOffset textureProjGrad textureProjGradOffset textureSize",300,320);
         add("textureGather textureGatherOffset imageSize imageLoad imageStore atomicCounter atomicCounterIncrement "
@@ -261,7 +370,7 @@ const std::vector<const Function*>& builtinOverloads(const std::string& name) {
 }
 
 bool isBuiltinFunctionName(const std::string& name, int version) {
-    for(const Function* f:builtinOverloads(name))if(f->version<=version)return true;
+    for(const Function* f:builtinOverloads(name))if(f->version<=version && version<=f->lastVersion)return true;
     return isUnsupportedBuiltinName(name,version);
 }
 

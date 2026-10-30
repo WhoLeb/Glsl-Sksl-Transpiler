@@ -307,7 +307,7 @@ void api() {
     const auto byLine=r.diagnosticsByLine();
     CHECK(byLine.size()==1 && byLine.count(4));
     auto warn=transpile("#version 100\n#extension GL_EXT_shader_texture_lod : enable\nvoid main(){gl_FragColor=vec4(1.0);}");
-    CHECK(warn.ok() && !warn.source.empty() && warn.diagnostics.size()==1 && warn.diagnostics[0].severity==Severity::Warning);
+    CHECK(warn.ok() && !warn.source.empty() && warn.diagnostics.empty());
     auto derivativesExt=transpile("#version 100\n#extension GL_OES_standard_derivatives : enable\nvoid main(){gl_FragColor=vec4(1.0);}");
     CHECK(derivativesExt.ok() && derivativesExt.diagnostics.empty());
     auto macro=transpile("#version 100\n#define WHITE vec4(1.0)\nvoid main(){gl_FragColor=WHITE;}");

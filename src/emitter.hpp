@@ -12,5 +12,10 @@
 // differences the way GPUs compute fine derivatives. gl_FragCoord.xy is the coordinate parameter
 // of the SkSL main.
 namespace glsl_sksl {
-std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink);
+// The GLSL source of a statement or declaration: where it starts and the last line it covers.
+struct SourceSpan { Loc start; unsigned endLine=0; };
+// `origins` receives, per line of the returned SkSL, the span of the statement or declaration it
+// was generated from (empty for generated code such as built-in replacements).
+std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
+    std::vector<SourceSpan>& origins);
 }

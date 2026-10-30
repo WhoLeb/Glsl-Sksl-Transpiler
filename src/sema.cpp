@@ -1,10 +1,15 @@
 #include "sema.hpp"
 #include "language.hpp"
 #include <algorithm>
+#include <charconv>
 #include <climits>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #ifdef _MSC_VER
@@ -27,15 +32,16 @@ ConstantPtr makeConstant(const Type& t, std::vector<Scalar> values) {
 }
 std::int32_t wrap(std::uint32_t v){return static_cast<std::int32_t>(v);}
 
-// GLSL ES built-in variables of fragment shaders (section 7). Values of the implementation
-// constants are device-dependent, so they cannot be reproduced and are refused.
+// GLSL ES built-in variables of fragment shaders (section 7). The emitter replaces gl_FragData
+// (an array of gl_MaxDrawBuffers = 1 color in GLSL ES 1.00), gl_FrontFacing, gl_PointCoord and
+// gl_DepthRange.
 struct BuiltinVariable { const char* name; const char* type; int first, last; bool writable; const char* unsupported; };
 const BuiltinVariable kBuiltinVariables[]={
     {"gl_FragColor","vec4",100,100,true,""},
-    {"gl_FragData","vec4[]",100,100,true,"multiple render targets are not available in SkSL runtime shaders; write gl_FragColor instead"},
+    {"gl_FragData","vec4[]",100,100,true,""},
     {"gl_FragCoord","vec4",100,320,false,""},       // x and y only; see targetExpr
-    {"gl_FrontFacing","bool",100,320,false,"primitive facing is not available in SkSL runtime shaders"},
-    {"gl_PointCoord","vec2",100,320,false,"point sprite coordinates are not available in SkSL runtime shaders"},
+    {"gl_FrontFacing","bool",100,320,false,""},
+    {"gl_PointCoord","vec2",100,320,false,""},
     {"gl_FragDepth","float",300,320,true,"depth output is not available in SkSL runtime shaders"},
     {"gl_HelperInvocation","bool",310,320,false,"helper invocations are not visible in SkSL runtime shaders"},
     {"gl_SampleID","int",320,320,false,"per-sample shading is not available in SkSL runtime shaders"},
@@ -44,15 +50,18 @@ const BuiltinVariable kBuiltinVariables[]={
     {"gl_SampleMask","int[]",320,320,true,"sample masks are not available in SkSL runtime shaders"},
     {"gl_PrimitiveID","int",320,320,false,"primitive IDs are not available in SkSL runtime shaders"},
     {"gl_Layer","int",320,320,false,"layered rendering is not available in SkSL runtime shaders"},
-    {"gl_DepthRange","",100,320,false,"the depth range is not available in SkSL runtime shaders"},
+    {"gl_DepthRange","gl_DepthRangeParameters",100,320,false,""},
 };
-const char* const kImplementationConstants[][2]={
-    {"gl_MaxVertexAttribs","100"},{"gl_MaxVertexUniformVectors","100"},{"gl_MaxVaryingVectors","100"},
-    {"gl_MaxVertexTextureImageUnits","100"},{"gl_MaxCombinedTextureImageUnits","100"},{"gl_MaxTextureImageUnits","100"},
-    {"gl_MaxFragmentUniformVectors","100"},{"gl_MaxDrawBuffers","100"},{"gl_MaxVertexOutputVectors","300"},
-    {"gl_MaxFragmentInputVectors","300"},{"gl_MinProgramTexelOffset","300"},{"gl_MaxProgramTexelOffset","300"},
-    {"gl_MaxImageUnits","310"},{"gl_MaxFragmentImageUniforms","310"},{"gl_MaxCombinedImageUniforms","310"},
-    {"gl_MaxFragmentAtomicCounters","310"},{"gl_MaxAtomicCounterBindings","310"},{"gl_MaxFragmentAtomicCounterBuffers","310"},
+// Implementation constants depend on the device. The SkSL gets the minimum value the GLSL ES
+// specification of the version allows, the value of a device with exactly the required limits.
+struct ImplementationConstant { const char* name; int first; int minimum100, minimum300, minimum310; };
+const ImplementationConstant kImplementationConstants[]={
+    {"gl_MaxVertexAttribs",100,8,16,16},{"gl_MaxVertexUniformVectors",100,128,256,256},{"gl_MaxVaryingVectors",100,8,15,15},
+    {"gl_MaxVertexTextureImageUnits",100,0,16,16},{"gl_MaxCombinedTextureImageUnits",100,8,32,48},{"gl_MaxTextureImageUnits",100,8,16,16},
+    {"gl_MaxFragmentUniformVectors",100,16,224,256},{"gl_MaxDrawBuffers",100,1,4,4},{"gl_MaxVertexOutputVectors",300,0,16,16},
+    {"gl_MaxFragmentInputVectors",300,0,15,15},{"gl_MinProgramTexelOffset",300,0,-8,-8},{"gl_MaxProgramTexelOffset",300,0,7,7},
+    {"gl_MaxImageUnits",310,0,0,4},{"gl_MaxFragmentImageUniforms",310,0,0,0},{"gl_MaxCombinedImageUniforms",310,0,0,4},
+    {"gl_MaxFragmentAtomicCounters",310,0,0,0},{"gl_MaxAtomicCounterBindings",310,0,0,1},{"gl_MaxFragmentAtomicCounterBuffers",310,0,0,0},
 };
 
 struct Entry { Symbol* variable=nullptr; StructDef* type=nullptr; std::vector<Function*> functions; };
@@ -69,15 +78,20 @@ struct Quals {
 class Analyzer {
 public:
     Analyzer(ast::TranslationUnit& unit, DiagnosticSink& sink):unit(unit),sink(sink),program(std::make_unique<Program>()),version(unit.version),
-        derivativesExtension(unit.standardDerivatives) {
+        derivativesExtension(unit.standardDerivatives), textureLodExtension(unit.shaderTextureLod) {
         program->version=version;
         push();
     }
 
     std::unique_ptr<Program> run() {
         for(auto& d:unit.decls)declaration(*d,true);
+        annotateUniforms();
+        annotateSamplers();
+        chooseTextureCoordinate();
         finishProgram();
-        if(sink.errors==0)for(auto& d:unit.decls)targetDeclaration(*d);
+        // Also after errors, so every problem is reported at once.
+        for(auto& d:unit.decls)targetDeclaration(*d);
+        unusedIterationAnnotations();
         return std::move(program);
     }
 
@@ -86,13 +100,15 @@ private:
     DiagnosticSink& sink;
     std::unique_ptr<Program> program;
     int version;
-    bool derivativesExtension;
+    bool derivativesExtension, textureLodExtension;
     std::vector<std::unordered_map<std::string,Entry>> scopes;
     std::vector<std::map<std::string,std::string>> precisions;
     std::map<std::string,Symbol*> builtinSymbols;
     Function* current=nullptr;
 
     bool available(const Function& f) const {
+        if(version>f.lastVersion)return false;
+        if(f.name.size()>3 && f.name.compare(f.name.size()-3,3,"EXT")==0 && !textureLodExtension)return false;
         return f.version<=version || (derivativesExtension && isDerivative(f.name));
     }
 
@@ -319,26 +335,57 @@ private:
             {"blend_support_hsl_saturation",false,320},{"blend_support_hsl_color",false,320},{"blend_support_hsl_luminosity",false,320},
             {"blend_support_all_equations",false,320},
         };
+        // SkSL has no layout qualifiers and the SkSL drops them all, so a problem with one cannot
+        // change the result: it is reported as a warning. Only 'location' has an effect (which
+        // output and input are used), and a location that is not a valid number is ignored.
+        auto ignored=[&](const ast::LayoutId& id, const std::string& problem, const std::string& suggestion) {
+            sink.warning(id.loc,"sema.layout","Ignored invalid layout qualifier "+quote(id.name)+": "+problem+
+                "; the SkSL has no layout qualifiers, so it is dropped",suggestion);
+        };
         for(const ast::LayoutId* id:q.layout) {
             const Rule* rule=nullptr;
             for(const auto& r:rules)if(id->name==r.name)rule=&r;
-            if(!rule){invalid(id->loc,"layout","layout qualifier "+quote(id->name)+" is not defined in "+versionName(version));continue;}
-            if(rule->version>version){invalid(id->loc,"layout","layout qualifier "+quote(id->name)+" requires "+versionName(rule->version));continue;}
+            if(!rule) {
+                std::string closest; std::size_t best=3;
+                for(const auto& r:rules) {
+                    const std::size_t d=editDistance(id->name,r.name);
+                    if(d<best){best=d;closest=r.name;}
+                }
+                ignored(*id,"it is not defined in "+versionName(version),closest.empty()?"remove it":"did you mean "+quote(closest)+"?");
+                continue;
+            }
+            if(rule->version>version){ignored(*id,"it requires "+versionName(rule->version),"remove it, or raise the #version");continue;}
             if(rule->value!=static_cast<bool>(id->value)) {
-                invalid(id->loc,"layout","layout qualifier "+quote(id->name)+(rule->value?" needs a value, as in "+id->name+"=0":" does not take a value"));
+                ignored(*id,rule->value?"it needs a value, as in "+id->name+"=0":"it does not take a value","write it as GLSL ES defines it");
                 continue;
             }
             if(!id->value)continue;
             const Type t=expr(*id->value);
             long long v=-1;
-            if(!t.isError() && (!id->value->constant || !integer(*id->value,v) || v<0))
-                invalid(id->loc,"layout","layout qualifier "+quote(id->name)+" needs a non-negative integer constant");
+            if(!t.isError() && (!id->value->constant || !integer(*id->value,v) || v<0)) {
+                ignored(*id,"it needs a non-negative integer constant","use a number such as 0");
+                continue;
+            }
             if(id->name=="location") {
                 q.location=static_cast<int>(v);
                 const bool allowed=(q.storage=="out" && ctx==Context::Global)||((q.storage=="in"||q.storage=="uniform") && version>=310 && ctx==Context::Global);
-                if(!allowed)invalid(id->loc,"layout","layout qualifier 'location' is not allowed here");
+                if(!allowed)ignored(*id,"a location is not allowed here"+std::string(q.storage=="in" && version<310?" before GLSL ES 3.10":""),
+                    q.storage=="in" && version<310?"use '#version 310 es' or later":"remove it");
             }
         }
+    }
+    static std::size_t editDistance(const std::string& a, const std::string& b) {
+        std::vector<std::size_t> row(b.size()+1);
+        for(std::size_t j=0;j<=b.size();++j)row[j]=j;
+        for(std::size_t i=1;i<=a.size();++i) {
+            std::size_t diagonal=row[0]; row[0]=i;
+            for(std::size_t j=1;j<=b.size();++j) {
+                const std::size_t above=row[j];
+                row[j]=std::min({row[j]+1,row[j-1]+1,diagonal+(a[i-1]==b[j-1]?0:1)});
+                diagonal=above;
+            }
+        }
+        return row[b.size()];
     }
 
     void checkPrecision(const Quals& q, const Type& t, Loc at, const std::string& what) {
@@ -596,15 +643,6 @@ private:
         current=nullptr;
     }
 
-    static bool returns(const ast::Stmt& s) {
-        switch(s.kind) {
-        case StmtKind::Return: case StmtKind::Discard: return true;
-        case StmtKind::Block: for(const auto& x:s.body)if(returns(*x))return true; return false;
-        case StmtKind::If: return s.otherwise && returns(*s.then) && returns(*s.otherwise);
-        default: return false;
-        }
-    }
-
     // ------------------------------------------------------------------ statements
     void scoped(ast::Stmt& s) {
         Scope scope(*this);
@@ -727,16 +765,17 @@ private:
             std::string type=b.type;
             const bool unsizedArray=type.size()>2 && type.compare(type.size()-2,2,"[]")==0;
             if(unsizedArray)type.resize(type.size()-2);
-            if(!type.empty())keywordType(type,s.type);
-            if(unsizedArray)s.type.arrays.push_back(0);
+            if(type=="gl_DepthRangeParameters")s.type=depthRangeType();
+            else if(!type.empty())keywordType(type,s.type);
+            if(unsizedArray)s.type.arrays.push_back(name=="gl_FragData"?1:0);
             s.readOnly=!b.writable;
             s.unsupported=b.unsupported;
         }
         for(const auto& c:kImplementationConstants)
-            if(name==c[0] && version>=std::stoi(c[1])) {
+            if(name==c.name && version>=c.first) {
                 found=true;
                 s.type=Type::of(Type::Int); s.readOnly=true; s.constQualified=true; s.constantExpression=true;
-                s.unsupported="its value depends on the device, so the result cannot be reproduced";
+                s.value=makeConstant(s.type,{Scalar::of(static_cast<std::int32_t>(version>=310?c.minimum310:version>=300?c.minimum300:c.minimum100))});
             }
         if(!found){builtinSymbols[name]=nullptr;return nullptr;}
         s.name=name; s.storage=Storage::BuiltIn;
@@ -745,6 +784,19 @@ private:
         builtinSymbols[name]=&program->symbols.back();
         return &program->symbols.back();
     }
+
+    // struct gl_DepthRangeParameters { highp float near, far, diff; }
+    Type depthRangeType() {
+        if(!depthRange) {
+            program->structs.push_back({"gl_DepthRangeParameters",{},{}});
+            depthRange=&program->structs.back();
+            for(const char* f:{"near","far","diff"})depthRange->fields.push_back({f,Type::of(Type::Float),{}});
+        }
+        Type t=Type::of(Type::Struct);
+        t.structDef=depthRange;
+        return t;
+    }
+    StructDef* depthRange=nullptr;
 
     std::string missingBuiltinHint(const std::string& name) const {
         if(name=="gl_FragColor"||name=="gl_FragData")
@@ -1098,8 +1150,8 @@ private:
             for(const Function* f:builtinOverloads(e.text))if(available(*f))candidates.push_back(f);
         if(candidates.empty()) {
             if(isUnsupportedBuiltinName(e.text,version)) {
-                unsupported(e.loc,"builtin","built-in function "+quote(e.text)+": textures, images and atomic counters are not available in SkSL runtime shaders",
-                    "sample a child shader instead ('uniform shader' and .eval())");
+                unsupported(e.loc,"builtin","built-in function "+quote(e.text)+": SkSL runtime shaders have no images, atomic counters, memory "
+                    "barriers or interpolation functions","compute the value another way, or edit the SkSL by hand");
                 return {};
             }
             std::string hint="declare the function before calling it";
@@ -1107,6 +1159,10 @@ private:
                 if(f->version>version){hint=quote(e.text)+" requires "+versionName(f->version);break;}
             if(version==100 && isDerivative(e.text))hint=quote(e.text)+" requires '#extension GL_OES_standard_derivatives : enable' in GLSL ES 1.00";
             if(e.text=="texture2D"||e.text=="textureCube")hint=quote(e.text)+" was replaced by 'texture' in GLSL ES 3.00";
+            if(version==100 && e.text.size()>3 && e.text.compare(e.text.size()-3,3,"EXT")==0)
+                hint=quote(e.text)+" requires '#extension GL_EXT_shader_texture_lod : enable'";
+            if(version==100 && (e.text=="texture2DLod"||e.text=="texture2DProjLod"||e.text=="textureCubeLod"))
+                hint=quote(e.text)+" is only available in vertex shaders; use "+quote(e.text+"EXT")+" with '#extension GL_EXT_shader_texture_lod : enable'";
             invalid(e.loc,"undeclared","call of undeclared function "+quote(e.text),hint);
             return {};
         }
@@ -1116,6 +1172,12 @@ private:
             bool same=true;
             for(std::size_t i=0;i<types.size();++i)if(f->params[i].type!=types[i])same=false;
             if(same){match=f;break;}
+        }
+        if(!match && isUnsupportedBuiltinName(e.text,version)) {
+            // Valid GLSL: depth-comparison, integer and multisample samplers have no child-shader equivalent.
+            unsupported(e.loc,"builtin","call of "+quote(e.text+"("+argumentList(types)+")")+": only sampler2D, sampler3D, samplerCube and "
+                "sampler2DArray have an equivalent in SkSL runtime shaders (child shaders)","sample a child shader in the SkSL by hand");
+            return {};
         }
         if(!match) {
             std::string available;
@@ -1400,10 +1462,148 @@ private:
             invalid(Loc{1,1},"fragment-output","shader: it writes both gl_FragColor and gl_FragData");
     }
 
+    // ------------------------------------------------------------------ uniform annotations
+    // '// @minmax{a, b} @init{v}' on the line of a uniform declaration, or alone on the line before
+    // it, states the values the application gives the uniform (see loopIssues). Problems with an
+    // annotation are warnings: the annotation is then ignored.
+    struct Annotation { bool hasRange=false, hasInit=false; double minimum=0, maximum=0, initial=0; std::string text, error; };
+    static Annotation parseAnnotation(const std::string& comment) {
+        Annotation a;
+        const std::size_t first=std::min(comment.find("@minmax"),comment.find("@init"));
+        std::string text=comment.substr(first);
+        for(char& c:text)if(c=='\n'||c=='\r'||c=='\t')c=' ';
+        while(!text.empty() && text.back()==' ')text.pop_back();
+        a.text=text;
+        std::size_t p=0;
+        auto skip=[&]{while(p<text.size() && text[p]==' ')++p;};
+        auto expect=[&](char c){skip();if(p<text.size() && text[p]==c){++p;return true;}return false;};
+        auto number=[&](double& out) {
+            skip();
+            if(p<text.size() && text[p]=='+')++p;
+            const char* b=text.data()+p; const char* e=text.data()+text.size();
+            const auto r=std::from_chars(b,e,out);
+            if(r.ec!=std::errc() || !std::isfinite(out))return false;
+            p+=static_cast<std::size_t>(r.ptr-b);
+            if(p<text.size() && (text[p]=='f'||text[p]=='F'))++p;
+            return true;
+        };
+        while((p=text.find('@',p))!=std::string::npos) {
+            ++p;
+            if(text.compare(p,6,"minmax")==0) {
+                p+=6;
+                if(a.hasRange){a.error="it gives @minmax twice";return a;}
+                if(!expect('{')||!number(a.minimum)||!expect(',')||!number(a.maximum)||!expect('}')){a.error="@minmax must be written @minmax{MIN, MAX} with two numbers";return a;}
+                a.hasRange=true;
+            } else if(text.compare(p,4,"init")==0) {
+                p+=4;
+                if(a.hasInit){a.error="it gives @init twice";return a;}
+                if(!expect('{')||!number(a.initial)||!expect('}')){a.error="@init must be written @init{VALUE} with a number";return a;}
+                a.hasInit=true;
+            }
+        }
+        if(a.hasRange && a.minimum>a.maximum)a.error="the @minmax minimum is greater than the maximum";
+        else if(a.hasRange && a.hasInit && (a.initial<a.minimum||a.initial>a.maximum))a.error="the @init value is outside the @minmax range";
+        return a;
+    }
+    static bool fitsInt(double v){return v==std::floor(v) && v>=INT_MIN && v<=INT_MAX;}
+
+    // '// @filter{nearest|linear} @wrap{repeat|clamp|mirror}' on the line of a sampler uniform, or
+    // alone on the line before it: the GL sampler state of a texture the SkSL filters itself.
+    void annotateSamplers() {
+        for(const Comment& c:unit.comments) {
+            if(c.text.find("@filter")==std::string::npos && c.text.find("@wrap")==std::string::npos)continue;
+            std::string error, filter, wrap;
+            for(const char* key:{"@filter","@wrap"}) {
+                const std::size_t at=c.text.find(key);
+                if(at==std::string::npos)continue;
+                const std::size_t open=c.text.find_first_not_of(' ',at+std::strlen(key));
+                const std::size_t close=open==std::string::npos?open:c.text.find('}',open);
+                std::string value=open!=std::string::npos && c.text[open]=='{' && close!=std::string::npos?c.text.substr(open+1,close-open-1):std::string("?");
+                value.erase(0,value.find_first_not_of(' '));
+                value.erase(value.find_last_not_of(' ')+1);
+                (key[1]=='f'?filter:wrap)=value;
+            }
+            if(!filter.empty() && filter!="nearest" && filter!="linear")error="@filter must be written @filter{nearest} or @filter{linear}";
+            if(!wrap.empty() && wrap!="repeat" && wrap!="clamp" && wrap!="mirror")error="@wrap must be written @wrap{repeat}, @wrap{clamp} or @wrap{mirror}";
+            Symbol* target=nullptr;
+            for(Symbol& s:program->symbols)
+                if(s.storage==Storage::Uniform && s.type.base==Type::Opaque && ((c.loc.line<=s.loc.line && s.loc.line<=c.endLine) || (c.ownLine && c.endLine+1==s.loc.line)))
+                    target=&s;
+            if(!target && error.empty())error="it does not belong to a sampler uniform declaration";
+            if(!error.empty()) {
+                sink.warning(c.loc,"annotation.invalid","sampler annotation is ignored: "+error,
+                    "write '// @filter{linear} @wrap{repeat}' after the sampler uniform, or alone on the line before it");
+                continue;
+            }
+            if(!filter.empty())target->nearest=filter=="nearest";
+            if(!wrap.empty())target->wrap=wrap;
+        }
+    }
+
+    void annotateUniforms() {
+        for(const Comment& c:unit.comments) {
+            if(c.text.find("@minmax")==std::string::npos && c.text.find("@init")==std::string::npos)continue;
+            std::vector<Symbol*> targets;
+            for(Symbol& s:program->symbols)
+                if(s.storage==Storage::Uniform && ((c.loc.line<=s.loc.line && s.loc.line<=c.endLine) || (c.ownLine && c.endLine+1==s.loc.line)))
+                    targets.push_back(&s);
+            const Annotation a=parseAnnotation(c.text);
+            if(targets.empty()) {
+                sink.warning(c.loc,"annotation.unused","annotation '"+a.text+"' is ignored: it does not belong to a uniform declaration",
+                    "write it after the uniform on the same line, or alone on the line before it");
+                continue;
+            }
+            for(Symbol* s:targets) {
+                std::string error=a.error;
+                const bool isInt=s->type.base==Type::Int;
+                if(error.empty() && !(s->type.isScalar() && (isInt||s->type.base==Type::Float)))
+                    error="only int and float uniforms can be annotated, and "+quote(s->name)+" is "+quote(toString(s->type));
+                else if(error.empty() && isInt && ((a.hasRange && (!fitsInt(a.minimum)||!fitsInt(a.maximum))) || (a.hasInit && !fitsInt(a.initial))))
+                    error=quote(s->name)+" is an int, so the annotation needs whole numbers";
+                else if(error.empty() && !s->annotation.empty())
+                    error=quote(s->name)+" already has an annotation";
+                if(!error.empty()) {
+                    sink.warning(c.loc,"annotation.invalid","annotation '"+a.text+"' of uniform "+quote(s->name)+" is ignored: "+error,
+                        "write '// @minmax{MIN, MAX} @init{VALUE}' with MIN <= VALUE <= MAX");
+                    continue;
+                }
+                s->annotation=a.text;
+                s->hasRange=a.hasRange; s->minimum=a.minimum; s->maximum=a.maximum;
+                s->hasInit=a.hasInit; s->initial=a.initial;
+            }
+        }
+    }
+
+    // Shaders of the target application receive UV coordinates (0 to 1 across the drawn area) in
+    // their first input, such as 'layout(location = 0) in highp vec4 uv_coords;'. SkSL runtime
+    // shaders have no inputs, so that one is computed from the coordinate parameter of main; other
+    // inputs stay unsupported.
+    void chooseTextureCoordinate() {
+        Symbol* chosen=nullptr;
+        int inputs=0;
+        for(Symbol& s:program->symbols) {
+            if(s.storage!=Storage::Input)continue;
+            ++inputs;
+            if(s.location==0 || (!chosen && s.location<0))chosen=&s;
+        }
+        if(chosen && (chosen->location==0 || inputs==1) && chosen->type.base==Type::Float && chosen->type.isVector())
+            chosen->textureCoordinate=true;
+    }
+
     // ------------------------------------------------------------------ SkSL capability checks
     std::vector<const Symbol*> loopIndices;
     std::vector<char> breakTargets;      // 'L' loop, 'S' switch
     bool reportedUint=false, reportedMatrix=false;
+    // Samplers the emitter replaces by child shaders: the float sampler kinds without depth
+    // comparison or multisampling, alone or in an array.
+    static bool childSampler(const Type& t) {
+        static const std::set<std::string> kinds={"sampler2D","sampler3D","samplerCube","sampler2DArray"};
+        return t.base==Type::Opaque && kinds.count(t.opaque) && t.arrays.size()<=1;
+    }
+    static std::string unsupportedSampler(const std::string& what, const Type& t) {
+        return what+": SkSL runtime shaders have no images or atomic counters, and "+quote(toString(t))+" has no child-shader equivalent: "
+            "only sampler2D, sampler3D, samplerCube and sampler2DArray (without depth comparison, integer texels or multisampling) do";
+    }
     static bool nonSquare(const Type& t) {
         if(t.base==Type::Float && t.columns>1 && t.columns!=t.rows)return true;
         if(t.base==Type::Struct && t.structDef)for(const auto& f:t.structDef->fields)if(nonSquare(f.type))return true;
@@ -1421,14 +1621,18 @@ private:
             break;
         case DeclKind::Function:
             if(d.function->body) {
-                for(const auto& p:d.function->params)if(p.symbol)targetType(p.symbol->type,p.loc,"parameter "+quote(p.name));
+                for(const auto& p:d.function->params) {
+                    if(!p.symbol)continue;
+                    if(p.symbol->type.containsOpaque()) {
+                        // The emitter writes a copy of the function for each sampler it receives.
+                        if(!childSampler(p.symbol->type))
+                            unsupported(p.loc,"sampler",unsupportedSampler("parameter "+quote(p.name),p.symbol->type),
+                                "use a sampler2D, sampler3D, samplerCube or sampler2DArray");
+                    } else targetType(p.symbol->type,p.loc,"parameter "+quote(p.name));
+                }
                 const Type returned=d.function->symbol?d.function->symbol->returnType:Type{};
                 targetType(returned,d.function->loc,"return type of "+quote(d.function->name));
-                for(auto& s:d.function->body->body)targetStatement(*s);
-                const Function* fn=d.function->symbol;
-                if(fn && fn->returnType.base!=Type::Void && !returns(*d.function->body))
-                    unsupported(d.function->loc,"missing-return","function "+quote(fn->name)+": it can reach its end without returning a value, which SkSL rejects and GLSL leaves undefined",
-                        "add a return statement at the end of "+quote(fn->name));
+                targetList(d.function->body->body);
             }
             break;
         case DeclKind::Block:
@@ -1471,13 +1675,16 @@ private:
         if(!targetType(s.type,s.loc,what))return;
         switch(s.storage) {
         case Storage::Input:
-            unsupported(s.loc,"input",what+": shader inputs (varyings) are not available in SkSL runtime shaders",
-                "pass the value as a uniform, or compute it from the coordinate parameter of main");
+            if(!s.textureCoordinate)
+                unsupported(s.loc,"input",what+": shader inputs (varyings) are not available in SkSL runtime shaders, and only the input at "
+                    "location 0 is treated as the texture coordinate",
+                    "pass the value as a uniform, or compute it from the texture coordinate");
             break;
         case Storage::Uniform:
+            if(childSampler(s.type))break;   // becomes child shaders
             if(s.type.containsOpaque())
-                unsupported(s.loc,"sampler",what+": samplers, images and atomic counters are not available in SkSL runtime shaders",
-                    "use a child shader: 'uniform shader "+s.name+";' sampled with "+s.name+".eval(coord)");
+                unsupported(s.loc,"sampler",unsupportedSampler(what,s.type),
+                    "use a sampler2D, sampler3D, samplerCube or sampler2DArray, or declare 'uniform shader "+s.name+";' and sample it with "+s.name+".eval(coord) in the SkSL by hand");
             else if(s.type.contains(Type::Bool))
                 unsupported(s.loc,"bool-uniform",what+": SkSL runtime shaders cannot have bool uniforms","declare it as an int and test it with != 0");
             else if(s.type.base==Type::Struct && s.type.structDef && !s.type.structDef->block)
@@ -1511,7 +1718,7 @@ private:
     void targetStatement(ast::Stmt& s) {
         statementIssues(s);
         switch(s.kind) {
-        case StmtKind::Block: for(auto& x:s.body)targetStatement(*x); break;
+        case StmtKind::Block: targetList(s.body); break;
         case StmtKind::Declaration: targetDeclaration(*s.decl); break;
         case StmtKind::Expression: targetRoot(*s.expr); break;
         case StmtKind::If:
@@ -1526,7 +1733,12 @@ private:
             breakTargets.pop_back();
             break;
         case StmtKind::For: {
-            const Symbol* index=loopIssues(s);
+            std::string problem, suggestion;
+            const Symbol* index=loopIssues(s,problem,suggestion);
+            if(!problem.empty()) {
+                if(rewriteLoop(s,problem,suggestion)){targetStatement(s);break;}   // a block holding the initializer and a for loop
+                index=nullptr;
+            }
             if(s.init && s.init->kind==StmtKind::Declaration)targetDeclaration(*s.init->decl);
             else if(s.init && s.init->expr)targetRoot(*s.init->expr);
             if(s.expr)targetRoot(*s.expr);
@@ -1539,6 +1751,7 @@ private:
             break;
         }
         case StmtKind::While: case StmtKind::DoWhile:
+            if(rewriteLoop(s,{},{})){targetStatement(s);break;}   // now a for loop
             breakTargets.push_back('L');
             targetStatement(*s.loop);
             breakTargets.pop_back();
@@ -1562,19 +1775,10 @@ private:
             }
             break;
         }
-        case StmtKind::While: case StmtKind::DoWhile:
-            unsupported(s.loc,"loop",std::string(s.kind==StmtKind::While?"while":"do-while")+" loop: SkSL runtime shaders only allow for loops with a constant range",
-                std::string("rewrite it as a for loop with a constant maximum iteration count that breaks when the condition fails: ")+
-                "for (int i = 0; i < MAX; ++i) { if (!("+(s.expr?ast::toGlsl(*s.expr):std::string("condition"))+")) break; ... }");
-            break;
         case StmtKind::Continue:
             if(!breakTargets.empty() && breakTargets.back()=='S')
                 unsupported(s.loc,"continue-in-switch","continue: SkSL does not allow 'continue' inside a switch statement",
                     "set a flag, break out of the switch, and continue after it");
-            break;
-        case StmtKind::Discard:
-            unsupported(s.loc,"discard","discard: SkSL runtime shaders cannot discard fragments",
-                "return a fully transparent color instead; this matches discard only with source-over blending");
             break;
         default: break;
         }
@@ -1582,49 +1786,611 @@ private:
 
     // Loops in SkSL runtime shaders follow GLSL ES 1.00 Appendix A: one int or float index with a
     // constant start, compared against a constant, stepped by a constant, not modified in the body.
+    // A start or bound that is not constant is accepted when its range is known (see range): the
+    // loop then runs over a constant range that covers it, and statements at the start of the body
+    // skip the iterations before the real start and leave at the real bound, so exactly the GLSL
+    // iterations run:
+    //   for (int i = a; i < n; i++) BODY
+    //   for (int i = A; i < N; i++) { if (i < a) continue; if (!(i < n)) break; BODY }
+    // Relying on the @minmax annotation of a uniform is reported as a warning.
     // Returns the loop index, if there is one.
-    GLSL_SKSL_NOINLINE const Symbol* loopIssues(const ast::Stmt& s) {
-        std::string problem, suggestion;
+    GLSL_SKSL_NOINLINE const Symbol* loopIssues(ast::Stmt& s, std::string& problem, std::string& suggestion) {
         const Symbol* index=nullptr;
+        ast::Declarator* declarator=nullptr;
         if(!s.init || s.init->kind!=StmtKind::Declaration || s.init->decl->kind!=DeclKind::Variable || s.init->decl->declarators.size()!=1)
             problem="the initializer must declare exactly one loop index, as in 'for (int i = 0; ...'";
         else {
-            const auto& v=s.init->decl->declarators.front();
-            index=v.symbol;
+            declarator=&s.init->decl->declarators.front();
+            index=declarator->symbol;
             if(!index || !(index->type.isScalar() && (index->type.base==Type::Int||index->type.base==Type::Float)))
                 problem="the loop index must be an int or float";
-            else if(!v.init)problem="the loop index "+quote(v.name)+" must be initialized";
-            else if(!v.init->constant)
-                problem="the loop index "+quote(v.name)+" starts at "+quote(ast::toGlsl(*v.init))+", which is not a constant expression";
+            else if(!declarator->init)problem="the loop index "+quote(declarator->name)+" must be initialized";
         }
         const std::string name=index?index->name:"i";
+        ast::Expr* c=s.expr.get();
         if(problem.empty()) {
-            const ast::Expr* c=s.expr.get();
             static const std::set<std::string> relational={"<",">","<=",">=","==","!="};
             if(s.decl)problem="the condition cannot declare a variable";
             else if(!c)problem="the loop needs a condition";
             else if(c->kind!=ExprKind::Binary || !relational.count(c->text) || c->operands[0]->kind!=ExprKind::Name || c->operands[0]->symbol!=index)
                 problem="the condition must compare the loop index with a constant, as in '"+name+" < 10'";
-            else if(!c->operands[1]->constant) {
-                const std::string bound=ast::toGlsl(*c->operands[1]);
-                problem="the bound "+quote(bound)+" is not a constant expression";
-                suggestion="loop to a constant maximum and exit early: for ("+toString(index->type)+" "+name+" = "+ast::toGlsl(*s.init->decl->declarators.front().init)+
-                    "; "+name+" "+c->text+" MAX; ...) { if (!("+name+" "+c->text+" "+bound+")) break; ... } where MAX is a constant limit on "+quote(bound);
-            }
         }
+        double step=0;
         if(problem.empty()) {
-            const ast::Expr* step=s.step.get();
-            auto isIndex=[&](const ast::Expr& x){return x.kind==ExprKind::Name && x.symbol==index;};
-            const bool ok=step && (((step->kind==ExprKind::Unary||step->kind==ExprKind::Postfix) && (step->text=="++"||step->text=="--") && isIndex(*step->operands[0]))
-                ||(step->kind==ExprKind::Assign && (step->text=="+="||step->text=="-=") && isIndex(*step->operands[0]) && step->operands[1]->constant));
-            if(!ok)problem="the step must be "+name+"++, "+name+"--, or "+name+" += / -= a constant expression";
+            const ast::Expr* x=s.step.get();
+            auto isIndex=[&](const ast::Expr& e){return e.kind==ExprKind::Name && e.symbol==index;};
+            if(x && (x->kind==ExprKind::Unary||x->kind==ExprKind::Postfix) && (x->text=="++"||x->text=="--") && isIndex(*x->operands[0]))
+                step=x->text=="++"?1:-1;
+            else if(x && x->kind==ExprKind::Assign && (x->text=="+="||x->text=="-=") && isIndex(*x->operands[0]) && x->operands[1]->constant) {
+                const auto v=scalarValue(*x->operands[1]);
+                step=v?(x->text=="+="?*v:-*v):std::numeric_limits<double>::quiet_NaN();
+            } else problem="the step must be "+name+"++, "+name+"--, or "+name+" += / -= a constant expression";
         }
         if(problem.empty() && writes(*s.loop,index))problem="the loop index "+quote(name)+" is modified inside the loop body";
-        if(!problem.empty()) {
-            if(suggestion.empty())suggestion="rewrite the loop as 'for (int i = START; i < END; ++i)' with constant START and END, using break for early exits";
-            unsupported(s.loc,"loop","for loop: SkSL runtime shaders only allow loops with a constant range; "+problem,suggestion);
+        if(problem.empty()) {
+            if(!declarator->init->constant||!c->operands[1]->constant)problem=boundLoop(s,*declarator,*c,step,suggestion);
+            else if(const auto first=scalarValue(*declarator->init))
+                if(const auto last=scalarValue(*c->operands[1]))
+                    indexRanges[index]=Range{std::min(*first,*last),std::max(*first,*last),{}};
         }
         return index;
+    }
+
+    // Statement lists, visited with the position of each statement (see counterStart).
+    std::vector<std::pair<std::vector<ast::StmtPtr>*,std::size_t>> lists;
+    void targetList(std::vector<ast::StmtPtr>& list) {
+        for(std::size_t i=0;i<list.size();++i) {
+            lists.emplace_back(&list,i);
+            targetStatement(*list[i]);
+            lists.pop_back();
+        }
+    }
+
+    // ------------------------------------------------------------------ loops of any form
+    // SkSL runtime shaders have no while or do-while loops, and only for loops of a constant range
+    // (GLSL ES 1.00 Appendix A). Other loops become a for loop over a constant number of iterations
+    // that keeps the original condition, so it leaves exactly when the GLSL loop does:
+    //   while (c) B           for (int n = 0; n < CAP; n++) { if (!(c)) break; B }
+    //   do B while (c);       for (int n = 0; n < CAP; n++) { if (n > 0 && !(c)) break; B }
+    //   for (I; c; S) B       { I; for (int n = 0; n < CAP; n++) { if (n > 0) { S; } if (!(c)) break; B } }
+    // continue then still reaches the condition (and the step). CAP is one more than the most
+    // iterations the loop can run, so the condition is tested once more: proved from a counter
+    // (see provedIterations), or stated by an annotation '// @maxiter{N}' on the line of the loop
+    // or alone on the line before it, which is reported as an assumption; the loop then also
+    // leaves after the condition when n == N. Without either the loop is refused.
+    struct LoopBound { double iterations=0; std::vector<const Symbol*> assumed; std::string why; };
+    GLSL_SKSL_NOINLINE bool rewriteLoop(ast::Stmt& s, const std::string& forProblem, std::string suggestion) {
+        const char* kind=s.kind==StmtKind::While?"while loop":s.kind==StmtKind::DoWhile?"do-while loop":"for loop";
+        const std::string lead=s.kind==StmtKind::For?std::string("for loop: SkSL runtime shaders only allow loops with a constant range; ")+forProblem:
+            std::string(kind)+": SkSL runtime shaders have no "+(s.kind==StmtKind::While?"while":"do-while")+" loops";
+        LoopBound bound;
+        const std::optional<double> proved=provedIterations(s,bound);
+        const std::optional<double> stated=iterationAnnotation(s);
+        if(!proved && !stated) {
+            if(suggestion.empty()||bound.why.empty())
+                suggestion="state the most iterations the loop runs with an annotation comment on its line, as in '"+
+                    std::string(s.kind==StmtKind::DoWhile?"do { // @maxiter{64}":s.kind==StmtKind::While?"while (...) { // @maxiter{64}":"for (...) { // @maxiter{64}")+
+                    "', or rewrite it as 'for (int i = START; i < END; ++i)' with constant START and END";
+            unsupported(s.loc,"loop",lead+", and the number of its iterations is not known: "+(bound.why.empty()?"it has no @maxiter annotation":bound.why+", and it has no @maxiter annotation"),suggestion);
+            return false;
+        }
+        const double iterations=proved?*proved:*stated;
+        if(iterations+1>kMaxLoopIterations) {
+            unsupported(s.loc,"loop",lead+", and it can run "+number(iterations)+" iterations, but SkSL allows at most "+number(kMaxLoopIterations-1),
+                proved?"narrow the range of values, for example with a smaller @minmax range":"lower the @maxiter annotation");
+            return false;
+        }
+        const double cap=iterations+1;   // the last iteration only finds the condition false
+        // The iteration counter, named by the emitter.
+        program->symbols.emplace_back();
+        Symbol& n=program->symbols.back();
+        n.name="iteration"; n.type=Type::of(Type::Int); n.loc=s.loc; n.storage=Storage::Local; n.generated=true;
+        auto counter=[&]{return nameOf(&n,s.loc);};
+        auto decl=std::make_unique<ast::Decl>(DeclKind::Variable,s.loc);
+        decl->type.name="int";
+        decl->declarators.push_back({});
+        decl->declarators.back().name=n.name; decl->declarators.back().loc=s.loc;
+        decl->declarators.back().init=literal(n.type,0,s.loc); decl->declarators.back().symbol=&n;
+        auto loop=std::make_unique<ast::Stmt>(StmtKind::For,s.loc);
+        loop->init=std::make_unique<ast::Stmt>(StmtKind::Declaration,s.loc);
+        loop->init->decl=std::move(decl);
+        loop->expr=binary("<",counter(),literal(n.type,cap,s.loc));
+        loop->step=std::make_unique<ast::Expr>(ExprKind::Postfix,s.loc);
+        loop->step->text="++"; loop->step->type=n.type; loop->step->operands.push_back(counter()); loop->step->height=2;
+        auto body=std::make_unique<ast::Stmt>(StmtKind::Block,s.loc);
+        body->scoped=false;
+        auto started=[&]{return binary(">",counter(),literal(n.type,0,s.loc));};
+        if(s.kind==StmtKind::For && s.step) {
+            auto step=std::make_unique<ast::Stmt>(StmtKind::If,s.loc);
+            step->expr=started();
+            step->then=std::make_unique<ast::Stmt>(StmtKind::Expression,s.step->loc);
+            step->then->expr=std::move(s.step);
+            body->body.push_back(std::move(step));
+        }
+        if(s.decl) {   // while (bool b = ...): declared at the start of each iteration
+            ast::Declarator& d=s.decl->declarators.front();
+            const Symbol* tested=d.symbol;
+            auto declaration=std::make_unique<ast::Stmt>(StmtKind::Declaration,s.decl->loc);
+            declaration->decl=std::move(s.decl);
+            body->body.push_back(std::move(declaration));
+            if(tested)body->body.push_back(jumpIf(notOf(nameOf(tested,s.loc)),StmtKind::Break,s.loc));
+        } else if(s.expr) {
+            auto leave=notOf(std::move(s.expr));
+            if(s.kind==StmtKind::DoWhile)leave=binary("&&",started(),std::move(leave));
+            body->body.push_back(jumpIf(std::move(leave),StmtKind::Break,s.loc));
+        }
+        // An annotated count is an assumption: past it the loop stops, after testing the condition.
+        if(!proved)body->body.push_back(jumpIf(binary("==",counter(),literal(n.type,iterations,s.loc)),StmtKind::Break,s.loc));
+        body->body.push_back(std::move(s.loop));
+        loop->loop=std::move(body);
+        // Report before the statement changes kind.
+        const std::string over="over at most "+number(iterations)+" iterations, leaving when the condition fails";
+        const std::string becomes=s.kind==StmtKind::For?"so it becomes a for loop "+over:"so it becomes a for loop "+over;
+        if(proved && bound.assumed.empty())
+            sink.warning(s.loc,"software.loop",lead+", "+becomes+"; exactly the GLSL iterations run","no change needed");
+        else if(proved) {
+            std::string names;
+            for(std::size_t k=0;k<bound.assumed.size();++k) {
+                if(k)names+=k+1==bound.assumed.size()?" and ":", ";
+                names+=quote(bound.assumed[k]->name)+" in ["+number(bound.assumed[k]->minimum)+", "+number(bound.assumed[k]->maximum)+"]";
+            }
+            sink.warning(s.loc,"software.loop",lead+", "+becomes+"; the count relies on "+names+", as the @minmax annotation states, and with values outside "
+                "the annotated range the loop can stop before the GLSL loop does","keep the uniform within its annotated range, or widen the annotation");
+        } else
+            sink.warning(s.loc,"software.loop",lead+", "+becomes+", as its @maxiter annotation states; if the GLSL loop ran more iterations, the SkSL loop "
+                "stops early","keep the @maxiter annotation at or above the most iterations the loop runs");
+        sink.hint("for (");
+        if(s.kind==StmtKind::For && s.init) {
+            // The initializer runs once, before the loop, in a scope of its own.
+            s.kind=StmtKind::Block;
+            s.scoped=true;
+            s.body.push_back(std::move(s.init));
+            s.body.push_back(std::move(loop));
+            s.expr.reset();
+        } else {
+            s.kind=StmtKind::For;
+            s.init=std::move(loop->init); s.expr=std::move(loop->expr); s.step=std::move(loop->step); s.loop=std::move(loop->loop);
+        }
+        return true;
+    }
+    static ast::ExprPtr notOf(ast::ExprPtr e) {
+        auto n=std::make_unique<ast::Expr>(ExprKind::Unary,e->loc);
+        n->text="!"; n->type=Type::of(Type::Bool); n->height=e->height+1;
+        n->operands.push_back(std::move(e));
+        return n;
+    }
+
+    // '// @maxiter{N}' on the line of a loop or alone on the line before it.
+    std::set<const Comment*> usedIterationAnnotations;
+    std::optional<double> iterationAnnotation(const ast::Stmt& s) {
+        for(const Comment& c:unit.comments) {
+            const std::size_t at=c.text.find("@maxiter");
+            if(at==std::string::npos)continue;
+            if(!((c.loc.line<=s.loc.line && s.loc.line<=c.endLine) || (c.ownLine && c.endLine+1==s.loc.line)))continue;
+            usedIterationAnnotations.insert(&c);
+            const char* b=c.text.c_str()+at+8;
+            while(*b==' ')++b;
+            double v=0;
+            const char* e=b;
+            if(*b=='{') {
+                ++b; while(*b==' ')++b;
+                const auto r=std::from_chars(b,c.text.c_str()+c.text.size(),v);
+                e=r.ptr; while(*e==' ')++e;
+                if(r.ec==std::errc() && *e=='}' && v>=0 && v==std::floor(v))return v;
+            }
+            sink.warning(c.loc,"annotation.invalid","annotation '@maxiter' is ignored: it must be written @maxiter{N} with a whole number N >= 0",
+                "write '// @maxiter{64}' with the most iterations the loop runs");
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    void unusedIterationAnnotations() {
+        for(const Comment& c:unit.comments)
+            if(c.text.find("@maxiter")!=std::string::npos && !usedIterationAnnotations.count(&c))
+                sink.warning(c.loc,"annotation.unused","annotation '@maxiter' is ignored: it does not belong to a loop that needs it",
+                    "write it on the line of a while, do-while or for loop, or alone on the line before it");
+    }
+
+    // The most iterations a loop can run, when a counter proves it: the condition compares a local
+    // int or float with a value of known range (see range), and the counter starts at a value of
+    // known range and moves towards it by a constant once in every iteration (the for step, an
+    // increment in the condition, or a statement of the body that comes before any continue).
+    // `bound.why` explains a failure.
+    GLSL_SKSL_NOINLINE std::optional<double> provedIterations(const ast::Stmt& s, LoopBound& bound) {
+        static const std::set<std::string> relational={"<",">","<=",">="};
+        const ast::Expr* c=s.expr.get();
+        if(c && !s.decl && c->constant && c->value && c->value->values.size()==1 && c->value->values[0].base==Type::Bool && !c->value->values[0].b)
+            return s.kind==StmtKind::DoWhile?1.0:0.0;   // while (false), do ... while (false)
+        if(s.decl || !c || c->kind!=ExprKind::Binary || !relational.count(c->text)) {
+            bound.why=s.decl?"its condition declares a variable":!c?"it has no condition":"its condition does not compare a counter with a bound using <, >, <= or >=";
+            return std::nullopt;
+        }
+        // The counter: a local, possibly incremented in the condition itself.
+        auto counterOf=[](const ast::Expr& e, double& step) -> const Symbol* {
+            const ast::Expr* x=&e;
+            step=0;
+            if((x->kind==ExprKind::Postfix||x->kind==ExprKind::Unary) && (x->text=="++"||x->text=="--")){step=x->text=="++"?1:-1;x=x->operands[0].get();}
+            if(x->kind!=ExprKind::Name || !x->symbol || x->symbol->storage!=Storage::Local)return nullptr;
+            const Type& t=x->symbol->type;
+            return t.isScalar() && (t.base==Type::Int||t.base==Type::Float)?x->symbol:nullptr;
+        };
+        std::string op=c->text;
+        double step=0;
+        const Symbol* v=counterOf(*c->operands[0],step);
+        const ast::Expr* limit=c->operands[1].get();
+        if(!v) {
+            v=counterOf(*c->operands[1],step);
+            limit=c->operands[0].get();
+            op=op=="<"?">":op==">"?"<":op=="<="?">=":"<=";
+        }
+        if(!v){bound.why="its condition does not compare a local variable with a bound";return std::nullopt;}
+        const std::string name=quote(v->name);
+        if(writes(*limit,v)){bound.why="its condition changes "+name+" twice";return std::nullopt;}
+        const ast::Stmt& body=*s.loop;
+        if(step!=0) {
+            if(writes(body,v)||(s.step && writes(*s.step,v))){bound.why=name+" also changes outside the condition";return std::nullopt;}
+        } else if(s.kind==StmtKind::For && s.step) {
+            if(!stepOf(*s.step,v,step)||writes(body,v)){bound.why=name+" does not change by a constant step once per iteration";return std::nullopt;}
+        } else {
+            // One statement of the body, before any continue, steps the counter; nothing else writes it.
+            const std::vector<ast::StmtPtr>* list=body.kind==StmtKind::Block?&body.body:nullptr;
+            bool found=false, skipped=false;
+            const std::size_t count=list?list->size():1;
+            for(std::size_t i=0;i<count;++i) {
+                const ast::Stmt& x=list?*(*list)[i]:body;
+                if(!writes(x,v)){skipped=skipped||continues(x);continue;}
+                if(found || skipped || x.kind!=StmtKind::Expression || !stepOf(*x.expr,v,step)){found=false;break;}
+                found=true;
+            }
+            if(!found){bound.why=name+" does not change by a constant step in one statement that every iteration runs";return std::nullopt;}
+        }
+        if(!(step==step) || step==0){bound.why=name+" does not change by a known constant";return std::nullopt;}
+        const bool up=step>0;
+        if(up!=(op=="<"||op=="<=")){bound.why=name+" moves away from the bound";return std::nullopt;}
+        // Where the counter starts.
+        const ast::Expr* start=counterStart(s,v);
+        if(!start){bound.why="the value "+name+" starts with is not known: it must be declared with an initializer right before the loop, unchanged until it";return std::nullopt;}
+        const auto first=range(*start,s), last=range(*limit,s);
+        if(!first || !std::isfinite(up?first->lo:first->hi)){bound.why="the start value "+quote(ast::toGlsl(*start))+" of "+name+" has no known range";return std::nullopt;}
+        if(!last || !std::isfinite(up?last->hi:last->lo)) {
+            std::vector<const Symbol*> missing;
+            unannotatedUniforms(*limit,missing);
+            bound.why="the bound "+quote(ast::toGlsl(*limit))+" has no known range"+(missing.empty()?std::string():" (uniform "+quote(missing.front()->name)+" has no @minmax annotation)");
+            return std::nullopt;
+        }
+        const double span=((up?last->hi:last->lo)-(up?first->lo:first->hi))/step;
+        double iterations=std::max(0.0,(op=="<="||op==">=")?std::floor(span)+1:std::ceil(span));
+        if(v->type.base==Type::Float)iterations+=1;      // rounding of the accumulated steps
+        if(s.kind==StmtKind::DoWhile)iterations+=1;      // the body runs before the first test
+        bound.assumed=first->assumed;
+        bound.assumed.insert(bound.assumed.end(),last->assumed.begin(),last->assumed.end());
+        std::sort(bound.assumed.begin(),bound.assumed.end());
+        bound.assumed.erase(std::unique(bound.assumed.begin(),bound.assumed.end()),bound.assumed.end());
+        return iterations;
+    }
+    // v++, ++v, v--, --v, v += c, v -= c with a constant c.
+    static bool stepOf(const ast::Expr& e, const Symbol* v, double& step) {
+        auto isV=[&](const ast::Expr& x){return x.kind==ExprKind::Name && x.symbol==v;};
+        if((e.kind==ExprKind::Unary||e.kind==ExprKind::Postfix) && (e.text=="++"||e.text=="--") && isV(*e.operands[0])){step=e.text=="++"?1:-1;return true;}
+        if(e.kind==ExprKind::Assign && (e.text=="+="||e.text=="-=") && isV(*e.operands[0]) && e.operands[1]->constant) {
+            const auto c=scalarValue(*e.operands[1]);
+            if(!c)return false;
+            step=e.text=="+="?*c:-*c;
+            return true;
+        }
+        return false;
+    }
+    // Whether s contains a continue of the enclosing loop.
+    static bool continues(const ast::Stmt& s) {
+        if(s.kind==StmtKind::Continue)return true;
+        if(s.kind==StmtKind::For||s.kind==StmtKind::While||s.kind==StmtKind::DoWhile)return false;
+        for(const auto& x:s.body)if(continues(*x))return true;
+        for(const ast::Stmt* x:{s.then.get(),s.otherwise.get()})if(x && continues(*x))return true;
+        return false;
+    }
+    // The value a loop counter has when the loop starts: the initializer of a for loop, or the
+    // initializer of its declaration in the statements right before the loop, which leave it unchanged.
+    const ast::Expr* counterStart(const ast::Stmt& s, const Symbol* v) const {
+        if(s.kind==StmtKind::For && s.init) {
+            if(s.init->kind==StmtKind::Declaration)
+                for(const auto& d:s.init->decl->declarators)if(d.symbol==v)return d.init.get();
+            const ast::Expr* e=s.init->expr.get();
+            if(e && e->kind==ExprKind::Assign && e->text=="=" && e->operands[0]->kind==ExprKind::Name && e->operands[0]->symbol==v)return e->operands[1].get();
+            if(writes(*s.init,v))return nullptr;
+        }
+        if(lists.empty() || (*lists.back().first)[lists.back().second].get()!=&s)return nullptr;
+        const auto& list=*lists.back().first;
+        for(std::size_t i=lists.back().second;i-->0;) {
+            const ast::Stmt& x=*list[i];
+            if(x.kind==StmtKind::Declaration)
+                for(const auto& d:x.decl->declarators)if(d.symbol==v)return d.init.get();
+            if(writes(x,v))return nullptr;
+        }
+        return nullptr;
+    }
+
+    // SkSL rejects loops that can run 100000 times or more ("loop must guarantee termination in
+    // fewer iterations"; measured with skslc).
+    static constexpr double kMaxLoopIterations=99999;
+
+    // Replaces a start or bound that is not constant by a constant that covers its range, moving
+    // the original expressions into guards at the start of the body. Returns the problem when the
+    // loop cannot be rewritten exactly.
+    GLSL_SKSL_NOINLINE std::string boundLoop(ast::Stmt& s, ast::Declarator& declarator, ast::Expr& condition, double step, std::string& suggestion) {
+        const Symbol* index=declarator.symbol;
+        const std::string& name=index->name;
+        const std::string& op=condition.text;
+        ast::Expr& start=*declarator.init;
+        ast::Expr& bound=*condition.operands[1];
+        const bool isInt=index->type.base==Type::Int;
+        const std::string startClause="the loop index "+quote(name)+" starts at "+quote(ast::toGlsl(start))+", which is not a constant expression";
+        const std::string boundClause="the bound "+quote(ast::toGlsl(bound))+" is not a constant expression";
+        const std::string what=!start.constant?startClause:boundClause;
+        if(!(step==step) || step==0)return what+", and the step is not a known non-zero constant";
+        const bool up=step>0;
+        if(op=="=="||op=="!=")return what+", and a condition using "+quote(op)+" does not limit the number of iterations";
+        if(up!=(op=="<"||op=="<="))return what+", and the loop index moves away from the bound, so the loop runs zero times or never ends";
+        std::vector<const Symbol*> assumed;
+        double first=0, last=0;
+        if(start.constant) {
+            const auto v=scalarValue(start);
+            if(!v)return boundClause;
+            first=*v;
+        } else {
+            if(!isInt)return startClause+"; a float loop index needs a constant start";
+            if(step!=1 && step!=-1)return startClause+"; a start that is not constant can only be replaced by a constant range when the index steps by 1";
+            const auto r=range(start,s);
+            const double limit=r?(up?r->lo:r->hi):0;
+            if(!r || !std::isfinite(limit))return unknownRange(start,startClause,suggestion);
+            first=limit;
+            assumed.insert(assumed.end(),r->assumed.begin(),r->assumed.end());
+        }
+        if(bound.constant) {
+            const auto v=scalarValue(bound);
+            if(!v)return startClause;
+            last=*v;
+        } else {
+            const auto r=range(bound,s);
+            const double limit=r?(up?r->hi:r->lo):0;
+            if(!r || !std::isfinite(limit))return unknownRange(bound,boundClause,suggestion);
+            last=up?std::ceil(limit):std::floor(limit);
+            assumed.insert(assumed.end(),r->assumed.begin(),r->assumed.end());
+        }
+        const double span=(last-first)/step;
+        const bool inclusive=op=="<="||op==">=";
+        const double iterations=std::max(0.0,inclusive?std::floor(span)+1:std::ceil(span));
+        if(iterations>kMaxLoopIterations) {
+            suggestion="narrow the range of values, for example with a smaller @minmax range";
+            return what+", and covering its range takes "+number(iterations)+" iterations, but SkSL allows at most "+number(kMaxLoopIterations);
+        }
+        // Guards first, while the original expressions are still in place.
+        std::vector<ast::StmtPtr> guards;
+        if(!start.constant) {
+            auto skip=binary(up?"<":">",nameOf(index,s.loc),std::move(declarator.init));
+            guards.push_back(jumpIf(std::move(skip),StmtKind::Continue,s.loc));
+            declarator.init=literal(index->type,first,s.loc);
+        }
+        if(!bound.constant) {
+            auto inside=binary(op,nameOf(index,s.loc),std::move(condition.operands[1]));
+            auto outside=std::make_unique<ast::Expr>(ExprKind::Unary,s.loc);
+            outside->text="!"; outside->type=Type::of(Type::Bool); outside->height=inside->height+1;
+            outside->operands.push_back(std::move(inside));
+            guards.push_back(jumpIf(std::move(outside),StmtKind::Break,s.loc));
+            condition.operands[1]=literal(index->type,last,s.loc);
+        }
+        if(s.loop->kind!=StmtKind::Block) {
+            auto body=std::make_unique<ast::Stmt>(StmtKind::Block,s.loop->loc);
+            body->scoped=false;
+            body->body.push_back(std::move(s.loop));
+            s.loop=std::move(body);
+        }
+        s.loop->body.insert(s.loop->body.begin(),std::make_move_iterator(guards.begin()),std::make_move_iterator(guards.end()));
+        std::sort(assumed.begin(),assumed.end());
+        assumed.erase(std::unique(assumed.begin(),assumed.end()),assumed.end());
+        indexRanges[index]=Range{std::min(first,last),std::max(first,last),assumed};
+        const std::string range="over the constant range '"+name+" = "+number(first)+"; "+name+" "+op+" "+number(last)+"' (at most "+number(iterations)+" iterations)";
+        const std::string replaced=std::string("for loop: SkSL runtime shaders only run loops with a constant range, so it runs ")+range+
+            " and checks the original "+(start.constant?"bound":bound.constant?"start":"start and bound")+" at the start of the body";
+        if(assumed.empty())
+            sink.warning(s.loc,"software.loop",replaced+"; exactly the GLSL iterations run","no change needed");
+        else {
+            std::string names;
+            for(std::size_t k=0;k<assumed.size();++k) {
+                if(k)names+=k+1==assumed.size()?" and ":", ";
+                names+=quote(assumed[k]->name)+" in ["+number(assumed[k]->minimum)+", "+number(assumed[k]->maximum)+"]";
+            }
+            sink.warning(s.loc,"software.loop",replaced+"; the range relies on "+names+", as the @minmax annotation states, and with values outside "
+                "the annotated range the loop runs fewer iterations than in GLSL","keep the uniform within its annotated range, or widen the annotation");
+        }
+        sink.hint("for (");
+        return {};
+    }
+
+    GLSL_SKSL_NOINLINE std::string unknownRange(const ast::Expr& e, const std::string& what, std::string& suggestion) const {
+        std::vector<const Symbol*> missing;
+        unannotatedUniforms(e,missing);
+        if(!missing.empty()) {
+            const Symbol* u=missing.front();
+            const bool isInt=u->type.base==Type::Int;
+            suggestion="give the uniform its range of values with an annotation comment: 'uniform "+toString(u->type)+" "+u->name+
+                (isInt?"; // @minmax{0, 32} @init{0}'":"; // @minmax{0.0, 1.0} @init{0.0}'");
+            std::string names;
+            for(std::size_t k=0;k<missing.size();++k)names+=(k?", ":"")+quote(missing[k]->name);
+            return what+", and "+(missing.size()==1?"uniform "+names+" has":"uniforms "+names+" have")+" no @minmax annotation that gives its range";
+        }
+        suggestion="clamp it to a constant range, as in 'clamp("+ast::toGlsl(e)+(e.type.base==Type::Float?", 0.0, 64.0)'":", 0, 64)'")+", or loop to a constant maximum and exit early with break";
+        return what+", and its range cannot be determined";
+    }
+    void unannotatedUniforms(const ast::Expr& e, std::vector<const Symbol*>& out) const {
+        if(e.kind==ExprKind::Name && e.symbol && e.symbol->storage==Storage::Uniform && !e.symbol->hasRange &&
+            std::find(out.begin(),out.end(),e.symbol)==out.end())out.push_back(e.symbol);
+        for(const auto& o:e.operands)unannotatedUniforms(*o,out);
+    }
+
+    // ------------------------------------------------------------------ value ranges
+    // Conservative range of a scalar int or float expression that has no side effects and keeps
+    // its value while a loop runs: constants, uniforms (unbounded unless annotated), indices of
+    // enclosing loops, locals and parameters the loop does not write, combined with + - * /,
+    // min, max, clamp, abs and int()/float(). Unknown parts are infinite.
+    struct Range { double lo=0, hi=0; std::vector<const Symbol*> assumed; };
+    std::map<const Symbol*,Range> indexRanges;   // loops accepted so far
+
+    static std::optional<double> scalarValue(const ast::Expr& e) {
+        if(!e.value || e.value->values.size()!=1)return std::nullopt;
+        const Scalar& v=e.value->values[0];
+        if(v.base==Type::Int)return static_cast<double>(v.i);
+        if(v.base==Type::Float)return static_cast<double>(v.f);
+        return std::nullopt;
+    }
+    // `wraps`: the operation can overflow an int (arithmetic, conversion from float).
+    static Range fit(Range r, bool isInt, bool wraps=false) {
+        constexpr double inf=std::numeric_limits<double>::infinity();
+        if(r.lo!=r.lo||r.hi!=r.hi){r.lo=-inf;r.hi=inf;}
+        if(isInt) {
+            // Integer overflow wraps, so the value can then be anything; an unbounded operand
+            // (an infinite end) can overflow too.
+            const bool overflow=(std::isfinite(r.lo) && r.lo<INT_MIN)||(std::isfinite(r.hi) && r.hi>INT_MAX)||
+                (wraps && (!std::isfinite(r.lo)||!std::isfinite(r.hi)));
+            if(overflow){r.lo=-inf;r.hi=inf;}
+        } else {
+            // Room for float rounding, which the shader does in single precision.
+            r.lo-=std::fabs(r.lo)*1e-6+1e-30;
+            r.hi+=std::fabs(r.hi)*1e-6+1e-30;
+        }
+        return r;
+    }
+    GLSL_SKSL_NOINLINE std::optional<Range> range(const ast::Expr& e, const ast::Stmt& loop) const {
+        constexpr double inf=std::numeric_limits<double>::infinity();
+        const Type& t=e.type;
+        if(!t.isScalar() || (t.base!=Type::Int && t.base!=Type::Float))return std::nullopt;
+        const bool isInt=t.base==Type::Int;
+        if(e.constant) {
+            if(const auto v=scalarValue(e))return Range{*v,*v,{}};
+            return std::nullopt;
+        }
+        auto join=[](Range& r, const Range& a){r.assumed.insert(r.assumed.end(),a.assumed.begin(),a.assumed.end());};
+        switch(e.kind) {
+        case ExprKind::Name: {
+            const Symbol* s=e.symbol;
+            if(!s)return std::nullopt;
+            if(s->storage==Storage::Uniform)
+                return s->hasRange?fit(Range{s->minimum,s->maximum,{s}},isInt):Range{-inf,inf,{}};
+            const auto it=indexRanges.find(s);
+            if(it!=indexRanges.end())return it->second;
+            if((s->storage==Storage::Local||s->storage==Storage::Parameter) && !writes(*loop.loop,s) && !(loop.step && writes(*loop.step,s)))
+                return Range{-inf,inf,{}};
+            return std::nullopt;
+        }
+        case ExprKind::Unary: {
+            if(e.text!="-" && e.text!="+")return std::nullopt;
+            auto a=range(*e.operands[0],loop);
+            if(!a)return std::nullopt;
+            if(e.text=="-")*a=Range{-a->hi,-a->lo,a->assumed};
+            return fit(*a,isInt,e.text=="-");
+        }
+        case ExprKind::Binary: {
+            const std::string& op=e.text;
+            if(op!="+" && op!="-" && op!="*" && op!="/")return std::nullopt;
+            const auto a=range(*e.operands[0],loop), b=range(*e.operands[1],loop);
+            if(!a||!b)return std::nullopt;
+            Range r;
+            join(r,*a); join(r,*b);
+            if(op=="+"){r.lo=a->lo+b->lo;r.hi=a->hi+b->hi;}
+            else if(op=="-"){r.lo=a->lo-b->hi;r.hi=a->hi-b->lo;}
+            else if(op=="/" && b->lo<=0 && b->hi>=0){r.lo=-inf;r.hi=inf;}
+            else {
+                // Products and quotients are monotonic in each operand on these intervals (the
+                // divisor keeps its sign), so the extremes are at the corners; truncation keeps that.
+                const double xs[2]={a->lo,a->hi}, ys[2]={b->lo,b->hi};
+                r.lo=inf; r.hi=-inf;
+                for(double x:xs)for(double y:ys) {
+                    double v=op=="*"?x*y:x/y;
+                    if(isInt && op=="/")v=std::trunc(v);
+                    r.lo=std::min(r.lo,v); r.hi=std::max(r.hi,v);
+                }
+            }
+            return fit(r,isInt,true);
+        }
+        case ExprKind::Call: {
+            if(!e.function || !e.function->builtin)return std::nullopt;
+            std::vector<Range> args;
+            for(const auto& o:e.operands) {
+                auto a=range(*o,loop);
+                if(!a)return std::nullopt;
+                args.push_back(std::move(*a));
+            }
+            Range r;
+            for(const auto& a:args)join(r,a);
+            const std::string& f=e.text;
+            if((f=="min"||f=="max") && args.size()==2) {
+                const bool lower=f=="min";
+                r.lo=lower?std::min(args[0].lo,args[1].lo):std::max(args[0].lo,args[1].lo);
+                r.hi=lower?std::min(args[0].hi,args[1].hi):std::max(args[0].hi,args[1].hi);
+            } else if(f=="clamp" && args.size()==3) {
+                // min(max(x, minVal), maxVal)
+                r.lo=std::min(std::max(args[0].lo,args[1].lo),args[2].lo);
+                r.hi=std::min(std::max(args[0].hi,args[1].hi),args[2].hi);
+            } else if(f=="abs" && args.size()==1) {
+                const Range& a=args[0];
+                if(isInt && a.lo<=INT_MIN){r.lo=-inf;r.hi=inf;}     // abs(INT_MIN) stays negative
+                else if(a.lo>=0){r.lo=a.lo;r.hi=a.hi;}
+                else if(a.hi<=0){r.lo=-a.hi;r.hi=-a.lo;}
+                else {r.lo=0;r.hi=std::max(-a.lo,a.hi);}
+            } else return std::nullopt;
+            return fit(r,isInt);
+        }
+        case ExprKind::Constructor: {
+            if(e.operands.size()!=1)return std::nullopt;
+            auto a=range(*e.operands[0],loop);
+            if(!a)return std::nullopt;
+            const bool fromFloat=e.operands[0]->type.base==Type::Float;
+            if(isInt){a->lo=std::trunc(a->lo);a->hi=std::trunc(a->hi);}
+            return fit(*a,isInt,isInt && fromFloat);
+        }
+        default: return std::nullopt;
+        }
+    }
+
+    // Syntax tree nodes for loop guards, with the annotations the semantic pass would give them.
+    static ast::ExprPtr literal(const Type& type, double v, Loc at) {
+        const bool isInt=type.base==Type::Int;
+        auto e=std::make_unique<ast::Expr>(isInt?ExprKind::IntLiteral:ExprKind::FloatLiteral,at);
+        e->type=Type::of(type.base); e->constant=true;
+        if(isInt) {
+            const auto i=static_cast<std::int32_t>(v);
+            e->intValue=static_cast<std::uint32_t>(i); e->text=std::to_string(i);
+            e->value=makeConstant(e->type,{Scalar::of(i)});
+        } else {
+            char text[64];
+            std::snprintf(text,sizeof text,"%.1f",v);
+            e->text=text; e->floatValue=v;
+            e->value=makeConstant(e->type,{Scalar::of(static_cast<float>(v))});
+        }
+        return e;
+    }
+    static ast::ExprPtr nameOf(const Symbol* s, Loc at) {
+        auto e=std::make_unique<ast::Expr>(ExprKind::Name,at);
+        e->text=s->name; e->symbol=s; e->type=s->type;
+        return e;
+    }
+    static ast::ExprPtr binary(const std::string& op, ast::ExprPtr a, ast::ExprPtr b) {
+        auto e=std::make_unique<ast::Expr>(ExprKind::Binary,a->loc);
+        e->text=op; e->type=Type::of(Type::Bool);
+        e->height=std::max(a->height,b->height)+1;
+        e->operands.push_back(std::move(a)); e->operands.push_back(std::move(b));
+        return e;
+    }
+    static ast::StmtPtr jumpIf(ast::ExprPtr condition, StmtKind jump, Loc at) {
+        auto s=std::make_unique<ast::Stmt>(StmtKind::If,at);
+        s->expr=std::move(condition);
+        s->then=std::make_unique<ast::Stmt>(jump,at);
+        return s;
+    }
+    static std::string number(double v) {
+        char text[64];
+        if(v==std::floor(v) && std::fabs(v)<1e15)std::snprintf(text,sizeof text,"%.0f",v);
+        else std::snprintf(text,sizeof text,"%g",v);
+        return text;
     }
 
     bool writes(const ast::Stmt& s, const Symbol* target) const {
@@ -1701,16 +2467,8 @@ private:
                 "because SkSL runtime shaders have no fragment depth or 1/w","use gl_FragCoord.xy");
         if(e.kind==ExprKind::Call && e.function && !e.function->unsupported.empty())
             unsupported(e.loc,"builtin","built-in function "+quote(e.text)+": "+e.function->unsupported);
-        static const std::set<std::string> bitwise={"&","|","^","~","<<",">>","&=","|=","^=","<<=",">>="};
-        if((e.kind==ExprKind::Binary||e.kind==ExprKind::Assign||e.kind==ExprKind::Unary) && !e.constant) {
-            if(e.text=="%"||e.text=="%=")
-                unsupported(e.loc,"operator","operator "+quote(e.text)+": SkSL runtime shaders have no integer remainder",
-                    "for non-negative operands below 2^24, int(mod(float(a), float(b))) gives the same result");
-            else if(bitwise.count(e.text))
-                unsupported(e.loc,"operator","operator "+quote(e.text)+": SkSL runtime shaders have no bitwise operators",
-                    e.text[0]=='<'||e.text[0]=='>'?"a shift by a constant n is a multiplication or division by 2^n for non-negative values":"rewrite the computation without bit operations");
-        }
-        if(e.kind==ExprKind::Index && !constantIndex(*e.operands[1]))
+        // Arrays of samplers are indexed by a selection among their child shaders (see the emitter).
+        if(e.kind==ExprKind::Index && !constantIndex(*e.operands[1]) && !e.operands[0]->type.containsOpaque())
             unsupported(e.loc,"dynamic-index","index "+quote(ast::toGlsl(e))+": SkSL runtime shaders only allow constant or loop-index expressions as indices, and "+
                 quote(ast::toGlsl(*e.operands[1]))+" is neither",
                 "select the element with a loop over the constant range, e.g. for (int k = 0; k < N; ++k) if (k == "+ast::toGlsl(*e.operands[1])+") value = "+

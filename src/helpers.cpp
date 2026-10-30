@@ -11,7 +11,7 @@ std::string skslType(const Type& t) {
     case Type::Uint: s="uint"; break;
     case Type::Float: s="float"; break;
     case Type::Struct: s=t.structDef?t.structDef->name:""; break;
-    case Type::Opaque: s=t.opaque; break;
+    case Type::Opaque: s=t.opaque=="sampler2D"?"shader":t.opaque; break;   // 2D textures become child shaders
     default: s="<error>"; break;
     }
     if(t.base>=Type::Bool && t.base<=Type::Float) {

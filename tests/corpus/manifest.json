@@ -189,29 +189,36 @@
     "source_valid": true
   },
   {
-    "name": "varying",
-    "file": "varying.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "name": "sampler",
+    "file": "sampler.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
-    "name": "sampler",
-    "file": "sampler.frag",
+    "name": "varying",
+    "file": "varying.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "uv_coords_input",
+    "file": "uv_coords_input.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "second_input",
+    "file": "second_input.frag",
     "expect": "reject",
-    "diagnostic": "Unsupported",
+    "diagnostic": "unsupported.input",
     "source_valid": true
   },
   {
     "name": "depth",
     "file": "depth.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "source_valid": true
-  },
-  {
-    "name": "discard",
-    "file": "discard.frag",
     "expect": "reject",
     "diagnostic": "Unsupported",
     "source_valid": true
@@ -252,13 +259,6 @@
     "source_valid": true
   },
   {
-    "name": "front_facing",
-    "file": "front_facing.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "source_valid": true
-  },
-  {
     "name": "sample_id",
     "file": "sample_id.frag",
     "expect": "reject",
@@ -277,6 +277,20 @@
     "file": "storage.frag",
     "expect": "reject",
     "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "discard",
+    "file": "discard.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "front_facing",
+    "file": "front_facing.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -432,8 +446,8 @@
   {
     "name": "dependent_nested_loop",
     "file": "dependent_nested_loop.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "target_expect": "reject",
     "source_valid": true
   },
@@ -478,14 +492,6 @@
     "source_valid": true
   },
   {
-    "name": "integer_bitwise",
-    "file": "integer_bitwise.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
-    "source_valid": true
-  },
-  {
     "name": "dynamic_for_helper",
     "file": "dynamic_for_helper.frag",
     "expect": "reject",
@@ -503,6 +509,42 @@
   {
     "name": "bounded_uniform_break",
     "file": "bounded_uniform_break.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "annotated_uniform_bound",
+    "file": "annotated_uniform_bound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "annotated_previous_line",
+    "file": "annotated_previous_line.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "clamped_bound",
+    "file": "clamped_bound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "annotated_bound_too_wide",
+    "file": "annotated_bound_too_wide.frag",
+    "expect": "reject",
+    "diagnostic": "unsupported.loop",
+    "target_expect": "reject",
+    "source_valid": true
+  },
+  {
+    "name": "integer_bitwise",
+    "file": "integer_bitwise.frag",
     "expect": "accept",
     "diagnostic": "",
     "source_valid": true
@@ -1303,9 +1345,22 @@
   {
     "name": "op_compound_int",
     "file": "op_compound_int.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_int_ops_vector",
+    "file": "op_int_ops_vector.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_bitnot_runtime",
+    "file": "op_bitnot_runtime.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -2603,15 +2658,15 @@
   {
     "name": "qual_smooth_in",
     "file": "qual_smooth_in.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "qual_centroid_in",
     "file": "qual_centroid_in.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -2754,17 +2809,16 @@
   {
     "name": "cf_for_empty_body_semicolon",
     "file": "cf_for_empty_body_semicolon.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "cf_for_init_outside",
     "file": "cf_for_init_outside.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "note": "no declaration in init; SkSL loop unroller wants one",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "counter declared before the loop; accepted with a software.loop warning",
     "source_valid": true
   },
   {
@@ -2778,9 +2832,8 @@
   {
     "name": "cf_for_no_increment",
     "file": "cf_for_no_increment.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -2932,25 +2985,58 @@
   {
     "name": "cf_while_false",
     "file": "cf_while_false.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "cf_do_while_once",
     "file": "cf_do_while_once.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "cf_do_while_continue",
     "file": "cf_do_while_continue.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "continue jumps to the condition",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_counter",
+    "file": "cf_while_counter.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_increment_in_condition",
+    "file": "cf_while_increment_in_condition.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_maxiter_annotation",
+    "file": "cf_while_maxiter_annotation.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_maxiter_annotation",
+    "file": "cf_for_maxiter_annotation.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_unbounded",
+    "file": "cf_while_unbounded.frag",
     "expect": "reject",
     "diagnostic": "Unsupported",
-    "note": "continue jumps to the condition",
     "target_expect": "reject",
     "source_valid": true
   },
@@ -3022,22 +3108,22 @@
   {
     "name": "cf_discard_in_if",
     "file": "cf_discard_in_if.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "cf_discard_in_helper",
     "file": "cf_discard_in_helper.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "cf_discard_in_dead_branch",
     "file": "cf_discard_in_dead_branch.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -3866,15 +3952,15 @@
   {
     "name": "bi_texelfetch",
     "file": "bi_texelfetch.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "bi_texture_size",
     "file": "bi_texture_size.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -3887,15 +3973,15 @@
   {
     "name": "bi_sampler_as_param",
     "file": "bi_sampler_as_param.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "bi_sampler_array",
     "file": "bi_sampler_array.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -3972,8 +4058,8 @@
   {
     "name": "bi_gl_PointCoord",
     "file": "bi_gl_PointCoord.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -4007,8 +4093,8 @@
   {
     "name": "bi_gl_max_constants",
     "file": "bi_gl_max_constants.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -4021,8 +4107,8 @@
   {
     "name": "bi_front_facing_in_helper",
     "file": "bi_front_facing_in_helper.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -4783,14 +4869,826 @@
   {
     "name": "mix_int_float_conversion_heavy",
     "file": "mix_int_float_conversion_heavy.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "mix_everything_in_one_expression",
     "file": "mix_everything_in_one_expression.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_fragcolor",
+    "file": "es100_fragcolor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_no_version_fragcolor",
+    "file": "es100_no_version_fragcolor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "no #version means GLSL ES 1.00"
+  },
+  {
+    "name": "es100_fragcolor_read_back",
+    "file": "es100_fragcolor_read_back.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_fragcolor_in_helper",
+    "file": "es100_fragcolor_in_helper.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_fragcoord",
+    "file": "es100_fragcoord.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_fragdata0",
+    "file": "es100_fragdata0.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "gl_FragData[0] alone equals gl_FragColor: it becomes the returned color"
+  },
+  {
+    "name": "es100_varying",
+    "file": "es100_varying.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_texture2d",
+    "file": "es100_texture2d.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_texture_cube_lod_ext",
+    "file": "es100_texture_cube_lod_ext.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_depth_range_front_facing",
+    "file": "es100_depth_range_front_facing.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_dfdx_extension",
+    "file": "es100_dfdx_extension.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_dfdx_without_extension_invalid",
+    "file": "es100_dfdx_without_extension_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "derivatives need GL_OES_standard_derivatives in GLSL ES 1.00"
+  },
+  {
+    "name": "es100_user_fn_named_es3_builtin",
+    "file": "es100_user_fn_named_es3_builtin.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "not built-ins in GLSL ES 1.00, but SkSL intrinsics: user functions must be renamed"
+  },
+  {
+    "name": "es100_var_named_es3_builtin",
+    "file": "es100_var_named_es3_builtin.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "es100_ident_uint",
+    "file": "es100_ident_uint.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "uint is an identifier in GLSL ES 1.00 but a type in SkSL"
+  },
+  {
+    "name": "pp_fragment_precision_high",
+    "file": "pp_fragment_precision_high.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "common real-world idiom"
+  },
+  {
+    "name": "pp_version_macro_es100",
+    "file": "pp_version_macro_es100.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_partial_last_arg",
+    "file": "conv_vec_ctor_partial_last_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "the last argument is only partly used; SkSL wants exact component counts",
+    "source_valid": true
+  },
+  {
+    "name": "conv_mat_ctor_partial_last_arg",
+    "file": "conv_mat_ctor_partial_last_arg.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_ctor_truncating_args",
+    "file": "conv_ctor_truncating_args.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "mat_from_single_vec4",
+    "file": "mat_from_single_vec4.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_from_mat_call_side_effect",
+    "file": "conv_vec_from_mat_call_side_effect.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "matrix argument with side effects: evaluate once, then take its components",
+    "source_valid": true
+  },
+  {
+    "name": "conv_ctor_mat_arg_side_effect_partial",
+    "file": "conv_ctor_mat_arg_side_effect_partial.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "conv_vec_ctor_unused_arg_invalid",
+    "file": "conv_vec_ctor_unused_arg_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "lit_int_hex_full_bits",
+    "file": "lit_int_hex_full_bits.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "hex literals keep the 32-bit pattern: -1 and INT_MIN",
+    "source_valid": true
+  },
+  {
+    "name": "op_int_overflow_const_fold",
+    "file": "op_int_overflow_const_fold.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "GLSL ES 3.00 integer arithmetic wraps",
+    "source_valid": true
+  },
+  {
+    "name": "swz_on_scalar_variable_invalid",
+    "file": "swz_on_scalar_variable_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "scalar swizzles are valid SkSL but not GLSL ES"
+  },
+  {
+    "name": "swz_too_long_invalid",
+    "file": "swz_too_long_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_vec_relational_invalid",
+    "file": "op_vec_relational_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_not_bvec_invalid",
+    "file": "op_not_bvec_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "op_logical_and_bvec_invalid",
+    "file": "op_logical_and_bvec_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "mat_vec_compound_assign",
+    "file": "mat_vec_compound_assign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "v*=m means v=v*m",
+    "source_valid": true
+  },
+  {
+    "name": "mat_div_componentwise",
+    "file": "mat_div_componentwise.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_comma_void_left",
+    "file": "op_comma_void_left.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_ternary_matrix",
+    "file": "op_ternary_matrix.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "op_swizzle_assign_value",
+    "file": "op_swizzle_assign_value.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "fn_redefine_builtin_invalid",
+    "file": "fn_redefine_builtin_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_overload_builtin_invalid",
+    "file": "fn_overload_builtin_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "fn_call_shadowed_by_variable_invalid",
+    "file": "fn_call_shadowed_by_variable_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "arr_out_param",
+    "file": "arr_out_param.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "generated_names_collision",
+    "file": "generated_names_collision.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "shader identifiers spelled like generated helper, quad and lane names",
+    "source_valid": true
+  },
+  {
+    "name": "ident_local_named_like_builtin_fn",
+    "file": "ident_local_named_like_builtin_fn.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "ident_param_named_like_builtin_fn",
+    "file": "ident_param_named_like_builtin_fn.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_name_style_unsized_init",
+    "file": "arr_name_style_unsized_init.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "arr_of_matrices",
+    "file": "arr_of_matrices.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_anonymous_global",
+    "file": "struct_anonymous_global.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "SkSL structs need a name",
+    "source_valid": true
+  },
+  {
+    "name": "struct_anonymous_local",
+    "file": "struct_anonymous_local.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_embedded_definition_invalid",
+    "file": "struct_embedded_definition_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "struct_local_shadows_global",
+    "file": "struct_local_shadows_global.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_array_of_struct_member",
+    "file": "struct_array_of_struct_member.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_member_of_ctor",
+    "file": "struct_member_of_ctor.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "struct_compare_with_array_member",
+    "file": "struct_compare_with_array_member.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "scope_for_body_redeclares_counter_invalid",
+    "file": "scope_for_body_redeclares_counter_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "a for body does not open a new scope for the init variable"
+  },
+  {
+    "name": "scope_struct_and_variable_same_name_invalid",
+    "file": "scope_struct_and_variable_same_name_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "scope_function_and_global_same_name_invalid",
+    "file": "scope_function_and_global_same_name_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "global_init_from_nonconst_global_invalid",
+    "file": "global_init_from_nonconst_global_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_for_cond_reversed_operands",
+    "file": "cf_for_cond_reversed_operands.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "4>i is i<4; normalized and accepted",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_increment_assign_form",
+    "file": "cf_for_increment_assign_form.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "i=i+1 is i+=1; refused today, could be normalized",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_postfix_decrement",
+    "file": "cf_for_postfix_decrement.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_compound_condition",
+    "file": "cf_for_compound_condition.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_cond_not_counter",
+    "file": "cf_for_cond_not_counter.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counter_passed_inout",
+    "file": "cf_for_counter_passed_inout.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "index modified through an inout argument",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_counter_passed_in",
+    "file": "cf_for_counter_passed_in.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_const_expr_bound",
+    "file": "cf_for_const_expr_bound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_stmt_before_case_invalid",
+    "file": "cf_switch_stmt_before_case_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_trailing_label_invalid",
+    "file": "cf_switch_trailing_label_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "cf_switch_selector_side_effect",
+    "file": "cf_switch_selector_side_effect.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "the selector is evaluated once",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_fallthrough_into_default_end",
+    "file": "cf_switch_fallthrough_into_default_end.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_return_inside_switch_in_loop",
+    "file": "cf_return_inside_switch_in_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_nested",
+    "file": "bi_dfdx_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "fine derivatives: a derivative of a derivative is 0 within a quad",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_arg_with_side_effect",
+    "file": "bi_dfdx_arg_with_side_effect.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "neighbour values would repeat the side effect",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_postincrement_arg",
+    "file": "bi_dfdx_postincrement_arg.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_in_const_loop",
+    "file": "bi_dfdx_in_const_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_in_pixel_dependent_branch",
+    "file": "bi_dfdx_in_pixel_dependent_branch.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "undefined on a GPU; every lane still has v, so the software value is well defined",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_in_uniform_branch",
+    "file": "bi_dfdx_in_uniform_branch.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_of_uniform",
+    "file": "bi_dfdx_of_uniform.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_vec4",
+    "file": "bi_dfdx_vec4.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_in_helper_called_twice",
+    "file": "bi_dfdx_in_helper_called_twice.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_of_global_mutated",
+    "file": "bi_dfdx_of_global_mutated.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_after_pixel_dependent_break",
+    "file": "bi_dfdx_after_pixel_dependent_break.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "control flow reconverges after the loop",
+    "source_valid": true
+  },
+  {
+    "name": "bi_dfdx_after_uniform_return",
+    "file": "bi_dfdx_after_uniform_return.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "contrast with bi_dfdx_after_pixel_return",
+    "source_valid": true
+  },
+  {
+    "name": "pp_ifndef_else",
+    "file": "pp_ifndef_else.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_elif_chain",
+    "file": "pp_elif_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_if_defined_operator",
+    "file": "pp_if_defined_operator.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_if_arithmetic_nested",
+    "file": "pp_if_arithmetic_nested.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_if_undefined_macro_invalid",
+    "file": "pp_if_undefined_macro_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "GLSL ES does not treat an undefined macro in #if as 0"
+  },
+  {
+    "name": "pp_if_unterminated_invalid",
+    "file": "pp_if_unterminated_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_else_without_if_invalid",
+    "file": "pp_else_without_if_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_define_redefined_invalid",
+    "file": "pp_define_redefined_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_define_identical_redefinition",
+    "file": "pp_define_identical_redefinition.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_define_self_referential",
+    "file": "pp_define_self_referential.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "a macro is not expanded inside its own expansion"
+  },
+  {
+    "name": "pp_define_mutually_recursive",
+    "file": "pp_define_mutually_recursive.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "pp_function_macro_paren_args",
+    "file": "pp_function_macro_paren_args.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "commas inside nested parentheses do not split macro arguments"
+  },
+  {
+    "name": "pp_function_macro_name_without_parens",
+    "file": "pp_function_macro_name_without_parens.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "a function-like macro name without ( is not expanded"
+  },
+  {
+    "name": "pp_line_macro_value",
+    "file": "pp_line_macro_value.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true,
+    "note": "GLSL ES 3.00: the line after #line 40 is 40"
+  },
+  {
+    "name": "pp_undef_then_use_invalid",
+    "file": "pp_undef_then_use_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_undef_builtin_macro_invalid",
+    "file": "pp_undef_builtin_macro_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_define_gl_prefix_invalid",
+    "file": "pp_define_gl_prefix_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false
+  },
+  {
+    "name": "pp_token_pasting",
+    "file": "pp_token_pasting.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "qual_invariant_redeclaration",
+    "file": "qual_invariant_redeclaration.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "qual_sample_in",
+    "file": "qual_sample_in.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_interpolate_at_centroid",
+    "file": "bi_interpolate_at_centroid.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_lod_family",
+    "file": "bi_texture_lod_family.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_cube",
+    "file": "bi_texture_cube.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_3d",
+    "file": "bi_texture_3d.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_2d_array",
+    "file": "bi_texture_2d_array.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_texture_gather",
+    "file": "bi_texture_gather.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_sampler_array_dynamic",
+    "file": "bi_sampler_array_dynamic.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_discard_with_derivative",
+    "file": "cf_discard_with_derivative.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_ldexp",
+    "file": "bi_ldexp.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_bitfield_insert_reverse",
+    "file": "bi_bitfield_insert_reverse.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mat4_inverse_determinant",
+    "file": "bi_mat4_inverse_determinant.frag",
     "expect": "accept",
     "diagnostic": "",
     "source_valid": true

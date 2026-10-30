@@ -32,21 +32,23 @@ case('layout_zero','void main(){color=vec4(1.);}',declaration='layout(location=0
 case('helper','float scale(float x){return x*.5;} void main(){color=vec4(scale(1.));}')
 case('uniform','void main(){color=tint;}',declaration='uniform vec4 tint; out vec4 color;')
 case('checker','void main(){float v=mod(floor(position.x)+floor(position.y),2.);color=vec4(vec3(v),1.);}',declaration='uniform vec2 position;out vec4 color;')
+case('sampler','void main(){color=texture(image,vec2(.5));}',declaration='uniform sampler2D image;out vec4 color;')
+case('varying','void main(){color=vec4(uv,0.,1.);}',declaration='in vec2 uv;out vec4 color;')
+case('uv_coords_input','void main(){out_color=vec4(uv_coords.xy,0.,1.);}',declaration='layout(location = 0) in highp vec4 uv_coords;uniform vec2 iResolution;layout(location = 0) out vec4 out_color;')
+case('second_input','void main(){color=vec4(uv+tint.xy,0.,1.);}',False,declaration='layout(location = 0) in vec2 uv;layout(location = 1) in vec4 tint;out vec4 color;',diagnostic='unsupported.input')
 for name, decl, body in [
- ('varying','in vec2 uv;out vec4 color;','color=vec4(uv,0.,1.);'),
- ('sampler','uniform sampler2D image;out vec4 color;','color=texture(image,vec2(.5));'),
  ('depth','out vec4 color;','gl_FragDepth=.5;color=vec4(1.);'),
- ('discard','out vec4 color;','discard;'),
  ('location_one','layout(location=1) out vec4 color;','color=vec4(1.);'),
  ('mrt','out vec4 color;out vec4 other;','color=other=vec4(1.);'),
  ('fragcoord','out vec4 color;','color=gl_FragCoord;'),
  ('atomic','uniform atomic_uint counter;out vec4 color;','color=vec4(float(atomicCounter(counter)));'),
  ('sample_mask','out vec4 color;','gl_SampleMask[0]=1;color=vec4(1.);'),
- ('front_facing','out vec4 color;','color=vec4(gl_FrontFacing ? 1. : 0.);'),
  ('sample_id','out vec4 color;','color=vec4(float(gl_SampleID));'),
  ('image_store','layout(rgba32f,binding=0) uniform highp image2D target;out vec4 color;','imageStore(target,ivec2(0),vec4(1.));color=vec4(1.);'),
  ('storage','layout(std430,binding=0) buffer Values {float value;};out vec4 color;','color=vec4(value);'),
 ]: case(name,'void main(){'+body+'}',False,decl, 'location' if name=='mrt' else 'Unsupported')
+case('discard','void main(){discard;}')
+case('front_facing','void main(){color=vec4(gl_FrontFacing ? 1. : 0.);}')
 case('missing_main','void helper(){}',False,diagnostic='main')
 case('struct','void main(){Value v;v.x=.5;color=vec4(v.x);}',declaration='struct Value {float x;};out vec4 color;')
 case('duplicate_main','void main(){color=vec4(1.);}void main(){color=vec4(0.);}',False,diagnostic='main')
@@ -76,18 +78,23 @@ probes = {
  'dynamic_array_index':'float a[3];a[0]=.1;a[1]=.2;a[2]=.3;color=vec4(a[clamp(count,0,2)]);',
  'dynamic_vector_index':'vec4 a=vec4(.1,.2,.3,.4);color=vec4(a[clamp(count,0,3)]);',
  'switch_fallthrough':'float a=0.;switch(count){case 0:a+=.1;case 1:a+=.2;break;default:a=.5;}color=vec4(a);',
- 'integer_bitwise':'int a=(count & 7) ^ 2;a=(a<<1)%7;color=vec4(float(a));',
 }
 for name, body in probes.items():
     case(name,'void main(){'+body+'}',declaration='uniform int count;uniform int start;uniform int step;out vec4 color;')
     cases[-1]['target_expect']='reject'
-    if name!='switch_fallthrough':
+    if name not in ('switch_fallthrough','dependent_nested_loop'):
         cases[-1]['expect']='reject'; cases[-1]['diagnostic']='Unsupported'
 case('dynamic_for_helper','float sum(int n){float a=0.;for(int i=0;i<n;++i){a+=.1;}return a;}void main(){color=vec4(sum(count));}',declaration='uniform int count;out vec4 color;')
 cases[-1]['target_expect']='reject'
 cases[-1]['expect']='reject'; cases[-1]['diagnostic']='Unsupported'
 case('const_bound_control','void main(){const int n=4;float a=0.;for(int i=0;i<n;++i){a+=.1;}color=vec4(a);}')
 case('bounded_uniform_break','void main(){float a=0.;for(int i=0;i<8;++i){if(i>=count)break;a+=.1;}color=vec4(a);}',declaration='uniform int count;out vec4 color;')
+case('annotated_uniform_bound','void main(){float a=0.;for(int i=-radius;i<=radius;++i){a+=.1;}color=vec4(a);}',declaration='uniform int radius; // @minmax{0, 8} @init{2}\nout vec4 color;')
+case('annotated_previous_line','void main(){float a=0.;for(float x=0.;x<r*2.;x+=.5){a+=.01;}color=vec4(a);}',declaration='// @minmax{1.0, 4.0}\nuniform float r;\nout vec4 color;')
+case('clamped_bound','void main(){float a=0.;for(int i=0;i<min(count,6);++i){a+=.1;}color=vec4(a);}',declaration='uniform int count;out vec4 color;')
+case('annotated_bound_too_wide','void main(){float a=0.;for(int i=0;i<count;++i){a+=.1;}color=vec4(a);}',False,declaration='uniform int count; // @minmax{0, 1000000}\nout vec4 color;',diagnostic='unsupported.loop')
+cases[-1]['target_expect']='reject'
+case('integer_bitwise','void main(){int a=(count & 7) ^ 2;a=(a<<1)%7;color=vec4(float(a));}',declaration='uniform int count;out vec4 color;')
 import edge_cases
 edge_cases.register(case, cases, root)
 for item in cases:

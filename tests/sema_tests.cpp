@@ -144,8 +144,6 @@ void mustReportError() {
         {P+"void f(const out float x){x=1.;} void main(){color=vec4(1.);}","sema.qualifier"},
         {P+"highp uniform float b; void main(){color=vec4(b);}","sema.qualifier-order"},
         {"#version 310 es\nprecision highp float;\nout vec4 color;\ncoherent uniform float v; void main(){color=vec4(v);}","sema.qualifier"},
-        {P+"layout(location=0) uniform float u; void main(){color=vec4(u);}","sema.layout"},
-        {P+"layout(foo) uniform float u; void main(){color=vec4(u);}","sema.layout"},
         {P+"void main(){(true?color:color)=vec4(1.);}","sema.not-lvalue"},
         {P+"void main(){bool b=1.<2.<3.; color=vec4(1.);}","sema.operator"},
         {P+"void main(){float x=5.%2.; color=vec4(x);}","sema.operator"},
@@ -188,16 +186,13 @@ void constantFolding() {
 void mustReportUnsupported() {
     const std::vector<std::pair<std::string,std::string>> cases={
         {P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}","unsupported.loop"},
-        {P+"void main(){int i=0; while(i<3){++i;} color=vec4(1.);}","unsupported.loop"},
+        {P+"uniform float e; void main(){float d=1.; while(d>e){d*=.5;} color=vec4(d);}","unsupported.loop"},
         {P+"void main(){for(int i=0;i<3;++i){i+=1;} color=vec4(1.);}","unsupported.loop"},
         {P+"uniform int n; void main(){float a[3]; color=vec4(a[n]);}","unsupported.dynamic-index"},
-        {P+"uniform int n; void main(){int x=n%2; color=vec4(float(x));}","unsupported.operator"},
         {P+"void main(){uint u=1u; color=vec4(float(u));}","unsupported.uint"},
         {P+"uniform bool b; void main(){color=vec4(b?1.:0.);}","unsupported.bool-uniform"},
-        {P+"in vec2 uv; void main(){color=vec4(uv,0.,1.);}","unsupported.input"},
-        {P+"void main(){discard;}","unsupported.discard"},
+        {P+"layout(location=0) in vec2 uv; layout(location=1) in vec2 other; void main(){color=vec4(uv+other,0.,1.);}","unsupported.input"},
         {P+"void main(){color=vec4(isnan(1.)?1.:0.);}","unsupported.builtin"},
-        {P+"float f(bool b){if(b) return 1.;} void main(){color=vec4(f(true));}","unsupported.missing-return"},
         {P+"uniform int n; void main(){switch(n){default: break; case 1: break;} color=vec4(1.);}","unsupported.switch-default"},
         {P+"uniform int n; void main(){for(int i=0;i<2;++i){switch(n){case 0: continue;}} color=vec4(1.);}","unsupported.continue-in-switch"},
         {P+"void main(){color=vec4(gl_FragCoord.z);}","unsupported.frag-coord"},
@@ -208,12 +203,12 @@ void mustReportUnsupported() {
 }
 
 void details() {
-    // The loop refusal must explain the MAX bound and the break alternative.
+    // The loop refusal must suggest a @minmax annotation.
     auto sink=analyzeSource(P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}");
     const Diagnostic* loop=nullptr;
     for(const auto& d:sink.list)if(d.code=="unsupported.loop" && !loop)loop=&d;
     CHECK(loop!=nullptr);
-    if(loop)CHECK(loop->suggestion.find("MAX")!=std::string::npos && loop->suggestion.find("break")!=std::string::npos);
+    if(loop)CHECK(loop->suggestion.find("@minmax")!=std::string::npos);
 
     // The public API must render the refusal with the GLSL line and suggestion.
     auto r=transpile(P+"uniform int n; void main(){for(int i=0;i<n;++i){} color=vec4(1.);}");
@@ -395,6 +390,234 @@ void derivatives() {
     expectRefused(HP+"float[2] g(float x){return float[2](dFdx(x),1.);} void main(){color=vec4(g(gl_FragCoord.x)[0]);}", "unsupported.array-return", __LINE__);
 }
 
+// Loop ranges: an annotated uniform bound is clamped to its range with a guard and a warning;
+// constant and enclosing-index bounds are exact. Refusals list every error, and invalid
+// annotations warn.
+void loopRanges() {
+    auto has=[](const Result& r, const std::string& code, Severity severity) {
+        for(const auto& d:r.diagnostics)if(d.code==code && d.severity==severity)return true;
+        return false;
+    };
+    auto contains=[](const std::string& text, const std::string& needle) {
+        return text.find(needle)!=std::string::npos;
+    };
+    auto byCode=[](const Result& r, const std::string& code) -> const Diagnostic* {
+        for(const auto& d:r.diagnostics)if(d.code==code)return &d;
+        return nullptr;
+    };
+
+    Result a=transpile(P+"uniform int n; // @minmax{0, 8}\nvoid main(){float a=0.;for(int i=0;i<n;++i){a+=.1;} color=vec4(a);}");
+    CHECK(a.ok());
+    CHECK(a.state==Result::State::Success);
+    CHECK(has(a,"software.loop",Severity::Warning));
+    const Diagnostic* sl=byCode(a,"software.loop");
+    CHECK(sl!=nullptr);
+    if(sl){
+        CHECK(sl->skslLine>0);
+        CHECK(sl->skslColumn>0);
+        CHECK(sl->skslSourceLine.find("for (")!=std::string::npos);
+        CHECK(sl->skslColumn>0 && sl->skslColumn<=sl->skslSourceLine.size() && sl->skslSourceLine.substr(sl->skslColumn-1,4)=="for ");
+    }
+    CHECK(contains(a.source,"i < 8"));
+    CHECK(contains(a.source,"if (!(i < n))"));
+    CHECK(contains(a.source,"// @minmax{0, 8}"));
+
+    Result b=transpile(P+"uniform int n; void main(){float a=0.;for(int i=0;i<min(n,16);++i){a+=.1;} color=vec4(a);}");
+    CHECK(b.ok());
+    // Integer min is also a generated function, since SkSL only has the float overloads.
+    CHECK(b.diagnostics.size()==2 && has(b,"software.loop",Severity::Warning) && has(b,"software.builtin",Severity::Warning));
+    CHECK(contains(b.source,"i < 16"));
+
+    Result c=transpile(P+"uniform int n; void main(){float a=0.;for(int i=0;i<4;++i){for(int j=0;j<i;++j){a+=.1;}} color=vec4(a);}");
+    CHECK(c.ok());
+    CHECK(c.diagnostics.size()==1 && c.diagnostics[0].code=="software.loop" && c.diagnostics[0].severity==Severity::Warning);
+    CHECK(contains(c.source,"j < 4"));
+    CHECK(contains(c.source,"if (!(j < i))"));
+
+    Result d=transpile(P+"uniform int n; void main(){float a=0.;for(int i=0;i<n;++i){a+=.1;} color=vec4(a);}");
+    CHECK(!d.ok());
+    CHECK(d.state==Result::State::Failure);
+    CHECK(d.source.rfind("#error GLSL ",0)==0);
+    CHECK(contains(d.source,"half4 main"));
+    CHECK(has(d,"unsupported.loop",Severity::Error));
+    const Diagnostic* ul=byCode(d,"unsupported.loop");
+    CHECK(ul!=nullptr);
+    if(ul){
+        CHECK(ul->skslLine>0);
+        CHECK(ul->skslSourceLine.find("for (")!=std::string::npos);
+    }
+
+    Result e=transpile(P+"void main(){color=vec4(undeclaredName);}");
+    CHECK(!e.ok());
+    CHECK(e.source.rfind("#error GLSL ",0)==0 && contains(e.source,"undeclaredName") && e.state==Result::State::Failure);
+    Result y=transpile(P+"void main(){color=vec4(1.)");
+    CHECK(!y.ok() && y.source.empty());
+
+    Result f=transpile(P+"void main(){if(gl_FragCoord.x>1.)discard; color=vec4(gl_FragCoord.z);}");
+    CHECK(!f.ok());
+    CHECK(has(f,"software.discard",Severity::Warning));
+    CHECK(has(f,"unsupported.frag-coord",Severity::Error));
+    CHECK(countOf(f.source,"#error GLSL ")>=1);
+
+    Result g=transpile(P+"uniform int n; // @minmax{5, 1}\nvoid main(){color=vec4(1.);}");
+    CHECK(g.ok());
+    CHECK(has(g,"annotation.invalid",Severity::Warning));
+
+    // sinh is replaced by a generated function; the warning points at the glsl_sinh call on GLSL line 4.
+    Result h=transpile(P+"uniform float t; void main(){color=vec4(sinh(t));}");
+    CHECK(h.ok());
+    const Diagnostic* sb=byCode(h,"software.builtin");
+    CHECK(sb!=nullptr);
+    if(sb){
+        CHECK(sb->severity==Severity::Warning);
+        CHECK(sb->skslLine>0);
+        CHECK(sb->skslColumn>0 && sb->skslColumn<=sb->skslSourceLine.size() && sb->skslSourceLine.substr(sb->skslColumn-1,10)=="glsl_sinh(");
+        CHECK(sb->line==4);
+    }
+
+    // Derivatives are computed in software; the warning points at the replacement.
+    Result k=transpile(HP+"void main(){color=vec4(dFdx(gl_FragCoord.x));}");
+    CHECK(k.ok());
+    CHECK(has(k,"software.derivative",Severity::Warning));
+    const Diagnostic* sd=byCode(k,"software.derivative");
+    CHECK(sd!=nullptr);
+    if(sd)CHECK(sd->skslLine>0);
+
+    // A shader with nothing replaced has no diagnostics.
+    Result z=transpile(P+"void main(){color=vec4(0.5);}");
+    CHECK(z.ok() && z.diagnostics.empty() && z.state==Result::State::Success);
+}
+
+// Fragment inputs: a float-vector input at location 0 (or the only input) is the normalized texture
+// coordinate, computed from gl_FragCoord and iResolution with a warning.
+void textureCoordinates() {
+    auto has=[](const Result& r, const std::string& code, Severity severity) {
+        for(const auto& d:r.diagnostics)if(d.code==code && d.severity==severity)return true;
+        return false;
+    };
+    auto contains=[](const std::string& text, const std::string& needle) {
+        return text.find(needle)!=std::string::npos;
+    };
+
+    Result t1=transpile(P+"in vec4 uv_coords; void main(){color=uv_coords;}");
+    CHECK(t1.ok());
+    CHECK(has(t1,"software.input",Severity::Warning));
+    CHECK(contains(t1.source,"uniform float2 iResolution;"));
+    CHECK(contains(t1.source,"uv_coords = float4(coord / iResolution, 0.0, 1.0);"));
+
+    Result t2=transpile(P+"uniform vec2 iResolution; in vec2 uv; void main(){color=vec4(uv,0.,1.);}");
+    CHECK(t2.ok());
+    CHECK(contains(t2.source,"uv = coord / iResolution;"));
+    CHECK(countOf(t2.source,"uniform float2 iResolution;")==1);   // the shader's own, not a second one
+}
+
+// 2D textures become shaders sampled with eval(); other samplers, unsupported texture
+// functions and sampler parameters are refused with a code naming the cause.
+void textures() {
+    auto has=[](const Result& r, const std::string& code, Severity severity) {
+        for(const auto& d:r.diagnostics)if(d.code==code && d.severity==severity)return true;
+        return false;
+    };
+    auto contains=[](const std::string& text, const std::string& needle) {
+        return text.find(needle)!=std::string::npos;
+    };
+
+    Result a=transpile(P+"uniform sampler2D t; uniform vec2 iResolution; in vec2 uv; void main(){color=texture(t,uv);}");
+    CHECK(a.ok());
+    CHECK(has(a,"software.texture",Severity::Warning));
+    CHECK(contains(a.source,"uniform shader t;"));
+    CHECK(contains(a.source,"float4(t.eval(uv))"));
+
+    Result b=transpile(P+"uniform sampler2D t; void main(){color=textureProj(t,vec3(1.,1.,2.));}");
+    CHECK(b.ok());
+    CHECK(contains(b.source,"t.eval(glsl_textureProj("));
+    CHECK(contains(b.source,"return p.xy / p.z;"));
+
+    Result c=transpile(P+"uniform sampler2D t; void main(){color=textureLod(t,vec2(.5),0.);}");
+    CHECK(c.ok());
+    CHECK(has(c,"software.texture",Severity::Warning));
+    CHECK(contains(c.source,"float4(t.eval(float2(.5)))"));
+
+    Result d=transpile(P+"uniform sampler2D t; void main(){color=texture(t,vec2(.5),1.);}");
+    CHECK(d.ok());
+    CHECK(contains(d.source,"float4(t.eval(float2(.5)))"));
+
+    Result e=transpile(P+"uniform sampler2D t; vec4 f(sampler2D s){return texture(s,vec2(.5));} void main(){color=f(t);}");
+    CHECK(e.ok());
+    CHECK(contains(e.source,"f_t("));
+    CHECK(!contains(e.source,"sampler2D"));
+
+    Result f=transpile(P+"uniform samplerCube t; void main(){color=vec4(1.);}");
+    CHECK(f.ok());
+    CHECK(contains(f.source,"uniform shader t_px;"));
+    CHECK(contains(f.source,"uniform shader t_nz;"));
+
+    Result sh=transpile(P+"uniform highp sampler2DShadow t; void main(){color=vec4(1.);}");
+    CHECK(!sh.ok());
+    CHECK(has(sh,"unsupported.sampler",Severity::Error));
+
+    Result sz=transpile(P+"uniform sampler2D t; void main(){color=texelFetch(t,ivec2(1),0)+vec4(vec2(textureSize(t,0)),0.,0.);}");
+    CHECK(sz.ok());
+    CHECK(contains(sz.source,"uniform float2 tSize;"));
+
+    Result g=transpile("#version 100\nprecision mediump float;\nuniform sampler2D t;\nvoid main(){gl_FragColor=texture2D(t,vec2(.5));}");
+    CHECK(g.ok());
+    CHECK(contains(g.source,"float4(t.eval(float2(.5)))"));
+
+    // texture2D is GLSL ES 1.00 only; in a 3.00 shader it is an undeclared function.
+    Result h=transpile(P+"uniform sampler2D t; void main(){color=texture2D(t,vec2(.5));}");
+    CHECK(!h.ok());
+    CHECK(has(h,"sema.undeclared",Severity::Error));
+
+    // Invalid layout qualifiers are dropped with a warning: the SkSL has none.
+    Result l1=transpile(P+"layout(location=0) uniform float u; void main(){color=vec4(u);}");
+    CHECK(l1.ok() && has(l1,"sema.layout",Severity::Warning));
+    Result l2=transpile(P+"layout(foo) uniform float u; void main(){color=vec4(u);}");
+    CHECK(l2.ok() && has(l2,"sema.layout",Severity::Warning));
+    Result l3=transpile("#version 320 es\nprecision highp float;\nlayout(locaiton = 0) out vec4 c;\nvoid main(){c=vec4(1.);}");
+    CHECK(l3.ok() && has(l3,"sema.layout",Severity::Warning));
+    for(const auto& d:l3.diagnostics)if(d.code=="sema.layout")CHECK(d.suggestion.find("'location'")!=std::string::npos);
+}
+
+// Constructs that used to be refused and are now translated with a software.* warning.
+void softwareFallbacks() {
+    auto has=[](const Result& r, const std::string& code, Severity severity) {
+        for(const auto& d:r.diagnostics)if(d.code==code && d.severity==severity)return true;
+        return false;
+    };
+    Result discard=transpile(P+"void main(){discard;}");
+    CHECK(discard.ok());
+    CHECK(has(discard,"software.discard",Severity::Warning));
+    CHECK(countOf(discard.source,"return half4(0.0);")>=1);
+
+    Result missing=transpile(P+"float f(bool b){if(b) return 1.;} void main(){color=vec4(f(true));}");
+    CHECK(missing.ok());
+    CHECK(has(missing,"software.missing-return",Severity::Warning));
+
+    auto contains=[](const std::string& text, const std::string& needle) {
+        return text.find(needle)!=std::string::npos;
+    };
+    Result whileCounter=transpile(P+"void main(){int i=0; while(i<3){++i;} color=vec4(1.);}");
+    CHECK(whileCounter.ok());
+    CHECK(has(whileCounter,"software.loop",Severity::Warning));
+    CHECK(contains(whileCounter.source,"for (int iteration = 0; iteration < 4; iteration++)"));
+
+    Result maxiter=transpile(P+"uniform float e; void main(){float d=1.; while(d>e){ // @maxiter{64}\nd*=.5;} color=vec4(d);}");
+    CHECK(maxiter.ok());
+    CHECK(has(maxiter,"software.loop",Severity::Warning));
+    CHECK(contains(maxiter.source,"iteration < 65"));
+
+    CHECK(transpile(P+"void main(){int k=0; do{k++;}while(false); color=vec4(float(k));}").ok());
+
+    Result ops=transpile(P+"uniform int n; void main(){int x=n%2; ivec2 v=ivec2(n)<<2; v>>=1; color=vec4(float(x),float(v.x&3),float(~n),1.);}");
+    CHECK(ops.ok());
+    CHECK(has(ops,"software.operator",Severity::Warning));
+    CHECK(contains(ops.source,"glsl_mod("));
+    CHECK(contains(ops.source,"glsl_shl("));
+    CHECK(contains(ops.source,"glsl_shrAssign("));
+    CHECK(contains(ops.source,"glsl_and("));
+}
+
 int main() {
     mustBeOk();
     mustReportError();
@@ -403,6 +626,10 @@ int main() {
     details();
     helpers();
     derivatives();
+    loopRanges();
+    textureCoordinates();
+    textures();
+    softwareFallbacks();
     if(failures)std::cerr<<failures<<" failed checks\n";
     else std::cout<<"sema tests passed\n";
     return failures?1:0;

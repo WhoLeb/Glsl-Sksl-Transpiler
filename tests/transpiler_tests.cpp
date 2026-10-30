@@ -14,8 +14,8 @@ int main(){
     check(numbers.source.find("++")!=std::string::npos);
     check(numbers.source.find("+=")!=std::string::npos);
     auto shifts=glsl_sksl::transpile("#version 300 es\nprecision highp float;out vec4 c;void main(void){int n=1;n<<=2;n>>=1;c=vec4(n);}");
-    check(!shifts.ok());
-    check(shifts.diagnostics.size()>=1 && shifts.diagnostics[0].code=="unsupported.operator");
+    check(shifts.ok());
+    check(shifts.diagnostics.size()>=1 && shifts.diagnostics[0].code=="software.operator");
     auto entry=glsl_sksl::transpile("#version 100\nprecision mediump float;void main(void){gl_FragColor=vec4(1.0);}");
     check(entry.ok());
     check(entry.source.find("return half4(fragColor);")!=std::string::npos);
@@ -29,8 +29,8 @@ int main(){
     check(!glsl_sksl::transpile("/* unclosed").ok());
     check(glsl_sksl::transpile("#define X 1.0\nvoid main(){gl_FragColor=vec4(X);}").ok());
     check(!glsl_sksl::transpile("void main(void){int n=1;n<<=2;gl_FragColor=vec4(1.0);}").ok());
-    check(!glsl_sksl::transpile("uniform sampler2D image; void main(){gl_FragColor=vec4(1);}").ok());
-    check(!glsl_sksl::transpile("uniform samplerCube image; void main(){gl_FragColor=vec4(1);}").ok());
+    check(glsl_sksl::transpile("uniform sampler2D image; void main(){gl_FragColor=vec4(1);}").ok());
+    check(glsl_sksl::transpile("uniform samplerCube image; void main(){gl_FragColor=vec4(1);}").ok());
     check(!glsl_sksl::transpile("uniform isampler2D image; void main(){gl_FragColor=vec4(1);}").ok());
     check(!glsl_sksl::transpile("uniform usampler3D image; void main(){gl_FragColor=vec4(1);}").ok());
     check(!glsl_sksl::transpile("void main(){} void main(){}").ok());

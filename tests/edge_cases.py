@@ -182,7 +182,9 @@ def register(case, cases, root):
       note='bitwise ops absent from ES2 profile')
     C('op_shift_precedence', 'void main(){int a=1<<2+1,b=8>>1-1,c=1<<1<<1;color=vec4(float(a+b+c)/100.);}')
     C('op_bitwise_precedence', 'void main(){int a=1|2&3^1;int b=1+2<<1;bool c=(5&3)==1;color=vec4(float(a+b)/10.,c?1.:0.,0.,1.);}')
-    C('op_compound_int', 'void main(){int a=100;a+=1;a-=2;a*=3;a/=2;a%=7;a<<=2;a>>=1;a&=15;a|=2;a^=5;color=vec4(float(a)/100.);}', ok=False, target='reject')
+    C('op_compound_int', 'void main(){int a=100;a+=1;a-=2;a*=3;a/=2;a%=7;a<<=2;a>>=1;a&=15;a|=2;a^=5;color=vec4(float(a)/100.);}')
+    C('op_int_ops_vector', 'void main(){ivec3 v=ivec3(count,count*3,-count);ivec3 w=(v&ivec3(5))|(v<<2)^(v>>1);w%=ivec3(7);color=vec4(vec3(w)/50.,1.);}', decl=UNI)
+    C('op_bitnot_runtime', 'void main(){int x=~count;color=vec4(float(x)/10.);}', decl=UNI)
     C('op_mod_int', 'void main(){int a=7%3,b=7/2,c=-7/2;color=vec4(float(a+b+c));}',
       note='% missing in ES2 profile: lower to a - b*(a/b) for ints')
     C('op_mod_int_vector', 'void main(){ivec3 a=ivec3(7,8,9)%ivec3(2,3,4);color=vec4(vec3(a)/4.,1.);}')
@@ -394,8 +396,8 @@ def register(case, cases, root):
     C('uniform_unused_only', 'void main(){color=vec4(1.);}', decl='uniform float unused;uniform vec4 unused2;out vec4 color;')
     C('uniform_name_collision_with_helper', 'float scale(float x){return x*scale_;}void main(){color=vec4(scale(1.));}', decl='uniform float scale_;out vec4 color;')
     C('qual_flat_in', 'void main(){color=vec4(float(i));}', ok=False, decl='flat in int i;out vec4 color;')
-    C('qual_smooth_in', 'void main(){color=vec4(uv,0.,1.);}', ok=False, decl='smooth in vec2 uv;out vec4 color;')
-    C('qual_centroid_in', 'void main(){color=vec4(uv,0.,1.);}', ok=False, decl='centroid in vec2 uv;out vec4 color;')
+    C('qual_smooth_in', 'void main(){color=vec4(uv,0.,1.);}', decl='smooth in vec2 uv;out vec4 color;')
+    C('qual_centroid_in', 'void main(){color=vec4(uv,0.,1.);}', decl='centroid in vec2 uv;out vec4 color;')
     C('qual_noperspective_in', 'void main(){color=vec4(uv,0.,1.);}', ok=False, decl='noperspective in vec2 uv;out vec4 color;', valid=False,
       note='not in ES 3.2 core')
     C('qual_early_fragment_tests', 'void main(){color=vec4(1.);}', decl='layout(early_fragment_tests) in;out vec4 color;', note='no depth or stencil test in runtime shaders, so it has no observable effect')
@@ -418,10 +420,10 @@ def register(case, cases, root):
     C('cf_empty_statements', 'void main(){;;color=vec4(1.);;}')
     C('cf_empty_if_body', 'void main(){if(true);else;color=vec4(1.);}')
     C('cf_empty_block_bodies', 'void main(){if(true){}else{}for(int i=0;i<2;++i){}color=vec4(1.);}')
-    C('cf_for_empty_body_semicolon', 'void main(){int i;for(i=0;i<3;++i);color=vec4(float(i)/3.);}', ok=False)
-    C('cf_for_init_outside', 'void main(){int i=0;for(;i<3;++i){}color=vec4(float(i)/3.);}', ok=False, note='no declaration in init; SkSL loop unroller wants one', target='reject')
+    C('cf_for_empty_body_semicolon', 'void main(){int i;for(i=0;i<3;++i);color=vec4(float(i)/3.);}')
+    C('cf_for_init_outside', 'void main(){int i=0;for(;i<3;++i){}color=vec4(float(i)/3.);}', note='counter declared before the loop; accepted with a software.loop warning')
     C('cf_for_no_cond_break', 'void main(){float a=0.;for(;;){a+=.1;if(a>.3)break;}color=vec4(a);}', ok=False, target='reject')
-    C('cf_for_no_increment', 'void main(){float a=0.;for(int i=0;i<4;){a+=.1;++i;}color=vec4(a);}', ok=False, target='reject')
+    C('cf_for_no_increment', 'void main(){float a=0.;for(int i=0;i<4;){a+=.1;++i;}color=vec4(a);}')
     C('cf_for_multi_init', 'void main(){float a=0.;for(int i=0,j=4;i<j;++i)a+=.1;color=vec4(a);}', ok=False, target='reject')
     C('cf_for_float_counter', 'void main(){float a=0.;for(float f=0.;f<1.;f+=.25)a+=f;color=vec4(a);}')
     C('cf_for_float_dynamic_end', 'void main(){float a=0.;for(float f=0.;f<size.x;f+=1.)a+=.1;color=vec4(a);}', ok=False, decl=UNI, target='reject')
@@ -443,10 +445,15 @@ def register(case, cases, root):
     C('cf_for_break_in_nested_only_inner', 'void main(){float a=0.;for(int i=0;i<3;++i){for(int j=0;j<3;++j){if(j==1)break;a+=.1;}}color=vec4(a);}')
     C('cf_for_with_discard_free_early_exit', 'void main(){color=vec4(0.);for(int i=0;i<4;++i){color+=vec4(.1);if(color.r>.25)return;}}')
     C('cf_while_const_break', 'void main(){float a=0.;int i=0;while(true){a+=.1;if(++i>3)break;}color=vec4(a);}', ok=False, target='reject')
-    C('cf_while_false', 'void main(){while(false){}color=vec4(1.);}', ok=False, target='reject')
-    C('cf_do_while_once', 'void main(){float a=0.;do{a+=.5;}while(false);color=vec4(a);}', ok=False, target='reject')
-    C('cf_do_while_continue', 'void main(){float a=0.;int i=0;do{++i;if(i==2)continue;a+=.1;}while(i<4);color=vec4(a);}', ok=False, target='reject',
+    C('cf_while_false', 'void main(){while(false){}color=vec4(1.);}')
+    C('cf_do_while_once', 'void main(){float a=0.;do{a+=.5;}while(false);color=vec4(a);}')
+    C('cf_do_while_continue', 'void main(){float a=0.;int i=0;do{++i;if(i==2)continue;a+=.1;}while(i<4);color=vec4(a);}',
       note='continue jumps to the condition')
+    C('cf_while_counter', 'void main(){int i=0;float a=0.;while(i<10){a+=.1;i++;}color=vec4(a);}')
+    C('cf_while_increment_in_condition', 'void main(){int i=0;int k=0;while(i++<5){k++;}color=vec4(float(k)/10.,float(i)/10.,0.,1.);}')
+    C('cf_while_maxiter_annotation', 'void main(){float d=1.;while(d>time){ // @maxiter{64}\nd*=.5;}color=vec4(d);}', decl=UNI)
+    C('cf_for_maxiter_annotation', 'void main(){float a=0.;for(int i=0;i<count;i++){ // @maxiter{32}\na+=.1;}color=vec4(a);}', decl=UNI)
+    C('cf_while_unbounded', 'void main(){float d=1.;while(d>time){d*=.5;}color=vec4(d);}', ok=False, decl=UNI, target='reject')
     C('cf_while_decl_in_cond', 'void main(){float a=0.;int i=0;while(bool b=i<3){a+=.1;++i;}color=vec4(a);}', ok=False, note='declaration in condition', target='reject')
     C('cf_if_decl_in_cond_invalid', 'void main(){if(bool b=true)color=vec4(1.);}', ok=False, valid=False)
     C('cf_condition_not_bool_invalid', 'void main(){if(1)color=vec4(1.);}', ok=False, valid=False)
@@ -456,9 +463,9 @@ def register(case, cases, root):
     C('cf_code_after_return', 'void main(){color=vec4(1.);return;color=vec4(0.);}')
     C('cf_code_after_break', 'void main(){float a=0.;for(int i=0;i<3;++i){break;a+=1.;}color=vec4(a);}')
     C('cf_return_value_in_void_invalid', 'void main(){color=vec4(1.);return 1.;}', ok=False, valid=False)
-    C('cf_discard_in_if', 'void main(){if(position.x>1.)discard;color=vec4(1.);}', ok=False, decl=UNI)
-    C('cf_discard_in_helper', 'void kill(){discard;} void main(){kill();color=vec4(1.);}', ok=False)
-    C('cf_discard_in_dead_branch', 'void main(){if(false){discard;}color=vec4(1.);}', ok=False)
+    C('cf_discard_in_if', 'void main(){if(position.x>1.)discard;color=vec4(1.);}', decl=UNI)
+    C('cf_discard_in_helper', 'void kill(){discard;} void main(){kill();color=vec4(1.);}')
+    C('cf_discard_in_dead_branch', 'void main(){if(false){discard;}color=vec4(1.);}')
     C('cf_switch_basic', 'void main(){float a=0.;switch(count){case 0:a=.1;break;case 1:a=.2;break;default:a=.3;}color=vec4(a);}', decl=UNI)
     C('cf_switch_constant_selector', 'void main(){float a=0.;switch(2){case 1:a=.1;break;case 2:a=.2;break;}color=vec4(a);}')
     C('cf_switch_default_middle', 'void main(){float a=0.;switch(count){case 0:a+=.1;default:a+=.2;case 1:a+=.3;break;case 2:a+=.4;}color=vec4(a);}', ok=False, decl=UNI, target='reject',
@@ -584,11 +591,11 @@ def register(case, cases, root):
       note='frexp is valid GLSL ES 3.10+, but SkSL has no bit-level access')
     C('bi_fma', 'void main(){color=vec4(fma(1.,2.,3.)/5.);}', note='replaced by an exact SkSL helper')
     C('bi_texture_without_sampler_invalid', 'void main(){color=texture(t,vec2(.5));}', ok=False, valid=False)
-    C('bi_texelfetch', 'void main(){color=texelFetch(t,ivec2(0),0);}', ok=False, decl='uniform sampler2D t;out vec4 color;')
-    C('bi_texture_size', 'void main(){color=vec4(vec2(textureSize(t,0)),0.,1.);}', ok=False, decl='uniform sampler2D t;out vec4 color;')
+    C('bi_texelfetch', 'void main(){color=texelFetch(t,ivec2(0),0);}', decl='uniform sampler2D t;out vec4 color;')
+    C('bi_texture_size', 'void main(){color=vec4(vec2(textureSize(t,0)),0.,1.);}', decl='uniform sampler2D t;out vec4 color;')
     C('bi_texture2d_legacy_invalid', 'void main(){color=texture2D(t,vec2(.5));}', ok=False, valid=False, decl='uniform sampler2D t;out vec4 color;')
-    C('bi_sampler_as_param', 'vec4 f(sampler2D s){return texture(s,vec2(.5));}void main(){color=f(t);}', ok=False, decl='uniform sampler2D t;out vec4 color;')
-    C('bi_sampler_array', 'void main(){color=texture(t[0],vec2(.5));}', ok=False, decl='uniform sampler2D t[2];out vec4 color;')
+    C('bi_sampler_as_param', 'vec4 f(sampler2D s){return texture(s,vec2(.5));}void main(){color=f(t);}', decl='uniform sampler2D t;out vec4 color;')
+    C('bi_sampler_array', 'void main(){color=texture(t[0],vec2(.5));}', decl='uniform sampler2D t[2];out vec4 color;')
     C('bi_sampler2dshadow', 'void main(){color=vec4(texture(t,vec3(.5)));}', ok=False, decl='uniform sampler2DShadow t;out vec4 color;')
     C('bi_sampler_2d_array_ms', 'void main(){color=vec4(1.);}', ok=False, decl='uniform sampler2DMS t;out vec4 color;')
     C('bi_gl_FragColor_in_320_invalid', 'void main(){gl_FragColor=vec4(1.);}', ok=False, valid=False, decl='')
@@ -600,14 +607,14 @@ def register(case, cases, root):
     C('bi_gl_FragCoord_assign_invalid', 'void main(){gl_FragCoord.x=1.;color=vec4(1.);}', ok=False, valid=False)
     C('bi_gl_FragCoord_in_helper', 'float f(){return gl_FragCoord.x;}void main(){color=vec4(f()/size.x);}', decl='uniform vec2 size;out vec4 color;')
     C('bi_gl_FragCoord_passed_out_invalid', 'void f(out vec4 v){v=vec4(1.);}void main(){f(gl_FragCoord);color=vec4(1.);}', ok=False, valid=False)
-    C('bi_gl_PointCoord', 'void main(){color=vec4(gl_PointCoord,0.,1.);}', ok=False)
+    C('bi_gl_PointCoord', 'void main(){color=vec4(gl_PointCoord,0.,1.);}')
     C('bi_gl_PrimitiveID', 'void main(){color=vec4(float(gl_PrimitiveID));}', ok=False)
     C('bi_gl_Layer', 'void main(){color=vec4(float(gl_Layer));}', ok=False)
     C('bi_gl_HelperInvocation', 'void main(){color=vec4(gl_HelperInvocation?1.:0.);}', ok=False)
     C('bi_gl_SamplePosition', 'void main(){color=vec4(gl_SamplePosition,0.,1.);}', ok=False)
-    C('bi_gl_max_constants', 'void main(){color=vec4(float(gl_MaxDrawBuffers)/8.);}', ok=False)
+    C('bi_gl_max_constants', 'void main(){color=vec4(float(gl_MaxDrawBuffers)/8.);}')
     C('bi_gl_vertex_var_in_fragment_invalid', 'void main(){gl_Position=vec4(1.);color=vec4(1.);}', ok=False, valid=False)
-    C('bi_front_facing_in_helper', 'float f(){return gl_FrontFacing?1.:0.;}void main(){color=vec4(f());}', ok=False)
+    C('bi_front_facing_in_helper', 'float f(){return gl_FrontFacing?1.:0.;}void main(){color=vec4(f());}')
 
     # ------------------------------------------------------------------ J. headers, directives, lexing (verbatim)
     BODY = 'out vec4 color;\nvoid main(){color=vec4(1.);}\n'
@@ -763,5 +770,162 @@ def register(case, cases, root):
     C('mix_premultiplied_alpha', 'void main(){color=vec4(1.,.5,.25,.5);}', note='GL straight alpha vs Skia premultiplied: decision')
     C('mix_bubble_sort_const', 'void main(){float a[5]=float[5](.5,.2,.9,.1,.4);for(int i=0;i<5;++i)for(int j=0;j<4;++j)if(a[j]>a[j+1]){float t=a[j];a[j]=a[j+1];a[j+1]=t;}color=vec4(a[0],a[2],a[4],1.);}')
     C('mix_matrix_chain', 'void main(){mat4 m=mat4(1.);m[3]=vec4(.1,.2,.3,1.);vec4 p=m*m*vec4(0.,0.,0.,1.);color=vec4(p.xyz,1.);}')
-    C('mix_int_float_conversion_heavy', 'void main(){int n=int(position.x)%4;float f=float(n)*.25+float(int(position.y)/2)*.01;color=vec4(f);}', ok=False, decl=UNI, target='reject')
+    C('mix_int_float_conversion_heavy', 'void main(){int n=int(position.x)%4;float f=float(n)*.25+float(int(position.y)/2)*.01;color=vec4(f);}', decl=UNI)
     C('mix_everything_in_one_expression', 'void main(){color=vec4(mix(vec3(.1,.2,.3).bgr,vec3(min(max(abs(-.5),.1),.9)),clamp(dot(normalize(vec3(1.)),vec3(.5))*2.,0.,1.)),true?1.:0.);}')
+
+    # ------------------------------------------------------------------ L. GLSL ES 1.00 shaders (verbatim)
+    E1 = '#version 100\nprecision mediump float;\n'
+    R('es100_fragcolor', E1 + 'void main(){gl_FragColor=vec4(.25,.5,.75,1.);}\n')
+    R('es100_no_version_fragcolor', 'precision mediump float;\nvoid main(){gl_FragColor=vec4(1.);}\n',
+      note='no #version means GLSL ES 1.00')
+    R('es100_fragcolor_read_back', E1 + 'void main(){gl_FragColor=vec4(.5);gl_FragColor.rgb*=.5;gl_FragColor.a=1.;}\n')
+    R('es100_fragcolor_in_helper', E1 + 'void shade(){gl_FragColor=vec4(.25);}\nvoid main(){shade();}\n')
+    R('es100_fragcoord', E1 + 'uniform vec2 size;\nvoid main(){gl_FragColor=vec4(gl_FragCoord.xy/size,0.,1.);}\n')
+    R('es100_fragdata0', E1 + 'void main(){gl_FragData[0]=vec4(1.);}\n',
+      note='gl_FragData[0] alone equals gl_FragColor: it becomes the returned color')
+    R('es100_varying', E1 + 'varying vec2 uv;\nvoid main(){gl_FragColor=vec4(uv,0.,1.);}\n')
+    R('es100_texture2d', E1 + 'uniform sampler2D t;\nvoid main(){gl_FragColor=texture2D(t,vec2(.5));}\n')
+    R('es100_texture_cube_lod_ext', '#extension GL_EXT_shader_texture_lod : enable\nprecision mediump float;\nuniform samplerCube env;\nuniform sampler2D t;\nvoid main(){gl_FragColor=textureCube(env,vec3(1.))+textureCubeLodEXT(env,vec3(1.),1.)+texture2DLodEXT(t,vec2(.5),1.);}\n')
+    R('es100_depth_range_front_facing', 'precision mediump float;\nvoid main(){gl_FragColor=vec4(gl_DepthRange.far,gl_FrontFacing?1.:0.,0.,1.);}\n')
+    R('es100_dfdx_extension', '#version 100\n#extension GL_OES_standard_derivatives : enable\nprecision mediump float;\nvoid main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x),fwidth(gl_FragCoord.y),0.,1.);}\n')
+    R('es100_dfdx_without_extension_invalid', E1 + 'void main(){gl_FragColor=vec4(dFdx(gl_FragCoord.x));}\n', ok=False, valid=False,
+      note='derivatives need GL_OES_standard_derivatives in GLSL ES 1.00')
+    R('es100_user_fn_named_es3_builtin', E1 + 'float round(float x){return floor(x+.5);}\nfloat sinh(float x){return x;}\nmat2 transpose(mat2 m){return mat2(m[0][0],m[1][0],m[0][1],m[1][1]);}\nvoid main(){mat2 m=transpose(mat2(1.,2.,3.,4.));gl_FragColor=vec4(round(.6),sinh(.5),m[0])/4.;}\n',
+      note='not built-ins in GLSL ES 1.00, but SkSL intrinsics: user functions must be renamed')
+    R('es100_var_named_es3_builtin', E1 + 'void main(){float round=.5,trunc=.25;gl_FragColor=vec4(round,trunc,0.,1.);}\n')
+    R('es100_ident_uint', E1 + 'float uint(float x){return x;}\nvoid main(){float uint2=.25;gl_FragColor=vec4(uint(.5),uint2,0.,1.);}\n',
+      note='uint is an identifier in GLSL ES 1.00 but a type in SkSL')
+    R('pp_fragment_precision_high', '#version 100\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\nvoid main(){gl_FragColor=vec4(1.);}\n',
+      note='common real-world idiom')
+    R('pp_version_macro_es100', E1 + '#if __VERSION__ == 100\n#define V .25\n#endif\nvoid main(){gl_FragColor=vec4(V);}\n')
+
+    # ------------------------------------------------------------------ M. constructors SkSL spells differently
+    C('conv_vec_ctor_partial_last_arg', 'void main(){vec3 a=vec3(vec2(1.,2.),vec2(3.,4.));vec2 b=vec2(1.,vec3(2.,3.,4.));color=vec4(a,b.y)/4.;}',
+      note='the last argument is only partly used; SkSL wants exact component counts')
+    C('conv_mat_ctor_partial_last_arg', 'void main(){mat2 m=mat2(vec3(1.,2.,3.),vec2(4.,5.));color=vec4(m[0],m[1])/4.;}')
+    C('conv_ctor_truncating_args', 'void main(){vec3 a=vec3(mat2(1.,2.,3.,4.));float b=float(vec3(.25,.5,.75));ivec2 c=ivec2(vec4(1.5,2.5,3.5,4.5));bvec2 d=bvec2(vec3(0.,1.,1.));color=vec4(a.z/4.,b,float(c.y)/4.,d.y?1.:0.);}')
+    C('mat_from_single_vec4', 'void main(){mat2 m=mat2(vec4(1.,2.,3.,4.));color=vec4(m[0],m[1])/4.;}')
+    C('conv_vec_from_mat_call_side_effect', 'float n=0.; mat2 h(){n+=.25;return mat2(n);} void main(){vec3 a=vec3(h());color=vec4(a.x,n,0.,1.);}',
+      note='matrix argument with side effects: evaluate once, then take its components')
+    C('conv_ctor_mat_arg_side_effect_partial', 'float n=0.; mat3 h(){n+=.25;return mat3(n);} void main(){vec3 a=vec3(.25,h());color=vec4(a.y,float(h()),n,1.);}')
+    C('conv_vec_ctor_unused_arg_invalid', 'void main(){vec2 a=vec2(vec2(1.),1.);color=vec4(a,0.,1.);}', ok=False, valid=False)
+    C('lit_int_hex_full_bits', 'void main(){int a=0xFFFFFFFF,b=0x80000000;color=vec4(a==-1?1.:0.,b<0?1.:0.,0.,1.);}',
+      note='hex literals keep the 32-bit pattern: -1 and INT_MIN')
+    C('op_int_overflow_const_fold', 'void main(){int a=2147483647+1;int b=65536*65536;color=vec4(a<0?1.:0.,b==0?1.:0.,0.,1.);}',
+      note='GLSL ES 3.00 integer arithmetic wraps')
+
+    # ------------------------------------------------------------------ N. operators and swizzles
+    C('swz_on_scalar_variable_invalid', 'void main(){float f=.5;color=f.xxxx;}', ok=False, valid=False,
+      note='scalar swizzles are valid SkSL but not GLSL ES')
+    C('swz_too_long_invalid', 'void main(){vec2 v=vec2(1.);color=vec4(v.xxxxx.x);}', ok=False, valid=False)
+    C('op_vec_relational_invalid', 'void main(){bool b=vec2(1.)<vec2(2.);color=vec4(b?1.:0.);}', ok=False, valid=False)
+    C('op_not_bvec_invalid', 'void main(){bvec2 b=!bvec2(true,false);color=vec4(b.x?1.:0.);}', ok=False, valid=False)
+    C('op_logical_and_bvec_invalid', 'void main(){bvec2 b=bvec2(true)&&bvec2(false);color=vec4(b.x?1.:0.);}', ok=False, valid=False)
+    C('mat_vec_compound_assign', 'void main(){vec2 v=vec2(1.,1.);v*=mat2(1.,2.,3.,4.);color=vec4(v/7.,0.,1.);}', note='v*=m means v=v*m')
+    C('mat_div_componentwise', 'void main(){mat2 a=mat2(2.,4.,6.,8.);mat2 b=mat2(2.,2.,2.,2.);mat2 c=a/b;mat2 d=8./a;color=vec4(c[1],d[0])/4.;}')
+    C('op_comma_void_left', 'void bump(inout float a){a+=.25;} void main(){float a=0.;float b=(bump(a),a);color=vec4(a,b,0.,1.);}')
+    C('op_ternary_matrix', 'void main(){mat2 m=u>0.?mat2(1.):mat2(.5);color=vec4(m[0],m[1]);}', decl='uniform float u;out vec4 color;')
+    C('op_swizzle_assign_value', 'void main(){vec2 v=vec2(0.);vec2 r=(v.yx=vec2(.25,.5));color=vec4(v,r);}')
+
+    # ------------------------------------------------------------------ O. functions, names, arrays, structs, scope
+    C('fn_redefine_builtin_invalid', 'float sin(float x){return x;} void main(){color=vec4(sin(.5));}', ok=False, valid=False)
+    C('fn_overload_builtin_invalid', 'vec2 sin(vec2 a,vec2 b){return a+b;} void main(){color=vec4(sin(vec2(.1),vec2(.2)),0.,1.);}', ok=False, valid=False)
+    C('fn_call_shadowed_by_variable_invalid', 'float f(){return 1.;} void main(){float f=2.;color=vec4(f());}', ok=False, valid=False)
+    C('arr_out_param', 'void fill(out float a[2]){a[0]=.25;a[1]=.5;} void main(){float x[2];fill(x);color=vec4(x[0],x[1],0.,1.);}')
+    C('generated_names_collision', 'float glsl_sinh(float x){return x;} void main(){float tmp1=.1,ret=.1,done=.1,result=.1,quad=.1,fragCoord=.1,coord=.1,v_L1=.1;float v=gl_FragCoord.x;color=vec4(sinh(.5)+glsl_sinh(.1),tmp1+ret+done+result,quad+fragCoord+coord+v_L1,dFdx(v));}',
+      note='shader identifiers spelled like generated helper, quad and lane names')
+    C('ident_local_named_like_builtin_fn', 'void main(){float sin=.5,dot=.25,mix=.125;color=vec4(sin+dot+mix);}')
+    C('ident_param_named_like_builtin_fn', 'float f(float length){return length*.5;} void main(){color=vec4(f(1.));}')
+    C('arr_name_style_unsized_init', 'void main(){float a[]=float[](1.,2.,3.);color=vec4(a[0],a[1],a[2],float(a.length()))/3.;}')
+    C('arr_of_matrices', 'void main(){mat2 a[2];a[0]=mat2(1.);a[1]=mat2(2.);a[1][0][1]=.5;color=vec4(a[0][1],a[1][0])/2.;}')
+    C('struct_anonymous_global', 'struct {float x;vec2 y;} s; void main(){s.x=.5;s.y=vec2(.25);color=vec4(s.x,s.y,1.);}',
+      note='SkSL structs need a name')
+    C('struct_anonymous_local', 'void main(){struct {float v;} a,b;a.v=.25;b.v=.5;color=vec4(a.v,b.v,0.,1.);}')
+    C('struct_embedded_definition_invalid', 'struct B{struct A{float x;} a;}; void main(){color=vec4(1.);}', ok=False, valid=False)
+    C('struct_local_shadows_global', 'struct S{float x;}; void main(){S g=S(.25);{struct S{vec2 y;};S l=S(vec2(.5));color=vec4(g.x,l.y,1.);}}')
+    C('struct_array_of_struct_member', 'struct A{float v;}; struct B{A a[2];}; void main(){B b=B(A[2](A(.25),A(.5)));b.a[1].v+=.25;color=vec4(b.a[0].v,b.a[1].v,0.,1.);}')
+    C('struct_member_of_ctor', 'struct S{float x;vec2 y;}; void main(){color=vec4(S(.25,vec2(.5,.75)).y,S(1.,vec2(0.)).x,1.);}')
+    C('struct_compare_with_array_member', 'struct S{float a[2];}; void main(){S x=S(float[2](1.,2.));S y=S(float[2](1.,2.));color=vec4(x==y?1.:0.,x!=y?1.:0.,0.,1.);}')
+    C('scope_for_body_redeclares_counter_invalid', 'void main(){float s=0.;for(int i=0;i<2;++i){int i=1;s+=float(i);}color=vec4(s);}', ok=False, valid=False,
+      note='a for body does not open a new scope for the init variable')
+    C('scope_struct_and_variable_same_name_invalid', 'struct S{float x;}; float S; void main(){color=vec4(1.);}', ok=False, valid=False)
+    C('scope_function_and_global_same_name_invalid', 'float f(){return 1.;} float f; void main(){color=vec4(1.);}', ok=False, valid=False)
+    C('global_init_from_nonconst_global_invalid', 'float a=1.; float b=a*2.; void main(){color=vec4(b);}', ok=False, valid=False)
+
+    # ------------------------------------------------------------------ P. loops and switch
+    C('cf_for_cond_reversed_operands', 'void main(){float a=0.;for(int i=0;4>i;++i)a+=.1;color=vec4(a);}',
+      note='4>i is i<4; normalized and accepted')
+    C('cf_for_increment_assign_form', 'void main(){float a=0.;for(int i=0;i<4;i=i+1)a+=.1;color=vec4(a);}', ok=False,
+      note='i=i+1 is i+=1; refused today, could be normalized')
+    C('cf_for_postfix_decrement', 'void main(){float a=0.;for(int i=3;i>=0;i--)a+=.1;color=vec4(a);}')
+    C('cf_for_compound_condition', 'void main(){float a=0.;for(int i=0;i<8&&a<u;++i)a+=.1;color=vec4(a);}', ok=False, decl='uniform float u;out vec4 color;')
+    C('cf_for_cond_not_counter', 'void main(){float a=0.;for(int i=0;a<.35;++i)a+=.1;color=vec4(a);}', ok=False)
+    C('cf_for_counter_passed_inout', 'void skip(inout int i){i+=1;} void main(){float a=0.;for(int i=0;i<8;++i){a+=.1;skip(i);}color=vec4(a);}', ok=False,
+      note='index modified through an inout argument')
+    C('cf_for_counter_passed_in', 'float w(int i){return float(i)*.1;} void main(){float a=0.;for(int i=0;i<4;++i)a+=w(i);color=vec4(a);}')
+    C('cf_for_const_expr_bound', 'void main(){float a=0.;const int n=3;for(int i=0;i<n*2-1;++i)a+=.1;color=vec4(a);}')
+    C('cf_switch_stmt_before_case_invalid', 'void main(){float a=0.;switch(count){a=1.;case 0:a=.5;break;}color=vec4(a);}', ok=False, valid=False, decl=UNI)
+    C('cf_switch_trailing_label_invalid', 'void main(){float a=0.;switch(count){case 0:a=.5;break;case 1:}color=vec4(a);}', ok=False, valid=False, decl=UNI)
+    C('cf_switch_selector_side_effect', 'void main(){float a=0.;int k=count;switch(k++){case 0:a=.5;break;default:a=.25;}color=vec4(a,float(k),0.,1.);}', decl=UNI,
+      note='the selector is evaluated once')
+    C('cf_switch_fallthrough_into_default_end', 'void main(){float a=0.;switch(count){case 0:a+=.25;default:a+=.5;}color=vec4(a);}', decl=UNI)
+    C('cf_return_inside_switch_in_loop', 'float f(){for(int i=0;i<4;++i){switch(i){case 2:return float(i)*.25;default:break;}}return 0.;} void main(){color=vec4(f());}')
+
+    # ------------------------------------------------------------------ Q. software derivatives
+    C('bi_dfdx_nested', 'void main(){float v=gl_FragCoord.x*gl_FragCoord.x;color=vec4(dFdx(dFdx(v)),dFdy(dFdx(v)),0.,1.);}',
+      note='fine derivatives: a derivative of a derivative is 0 within a quad')
+    C('bi_dfdx_arg_with_side_effect', 'float n=0.; float bump(){n+=1.;return n*gl_FragCoord.x;} void main(){float d=dFdx(bump());color=vec4(d,n,0.,1.);}', ok=False,
+      note='neighbour values would repeat the side effect')
+    C('bi_dfdx_postincrement_arg', 'void main(){float v=gl_FragCoord.x;float d=dFdx(v++);color=vec4(d,v,0.,1.);}', ok=False)
+    C('bi_dfdx_in_const_loop', 'void main(){float s=0.;for(int i=0;i<3;++i)s+=dFdx(gl_FragCoord.x*float(i));color=vec4(s);}')
+    C('bi_dfdx_in_pixel_dependent_branch', 'void main(){float v=gl_FragCoord.x;color=vec4(0.);if(v>4.)color=vec4(dFdx(v*v));}',
+      note='undefined on a GPU; every lane still has v, so the software value is well defined')
+    C('bi_dfdx_in_uniform_branch', 'void main(){float v=gl_FragCoord.x;color=vec4(0.);if(u>0.)color=vec4(dFdx(v*v));}', decl='uniform float u;out vec4 color;')
+    C('bi_dfdx_of_uniform', 'void main(){color=vec4(dFdx(u),dFdy(u),fwidth(u),1.);}', decl='uniform float u;out vec4 color;')
+    C('bi_dfdx_vec4', 'void main(){vec4 p=gl_FragCoord.xyxy*vec4(.1,.2,.3,.4);color=fwidth(p)+dFdy(p);}')
+    C('bi_dfdx_in_helper_called_twice', 'float d(float x){return dFdx(x);} void main(){float a=d(gl_FragCoord.x);float b=d(gl_FragCoord.y*2.);color=vec4(a,b,0.,1.);}')
+    C('bi_dfdx_of_global_mutated', 'float g=0.; void main(){g=gl_FragCoord.x*.5;g+=gl_FragCoord.y;color=vec4(dFdx(g),dFdy(g),0.,1.);}')
+    C('bi_dfdx_after_pixel_dependent_break', 'void main(){float s=0.;for(int i=0;i<4;++i){if(gl_FragCoord.x>float(i)*2.)break;s+=1.;}color=vec4(dFdx(s));}',
+      note='control flow reconverges after the loop')
+    C('bi_dfdx_after_uniform_return', 'void main(){if(u>1.){color=vec4(1.);return;}color=vec4(dFdx(gl_FragCoord.x));}', decl='uniform float u;out vec4 color;',
+      note='contrast with bi_dfdx_after_pixel_return')
+
+    # ------------------------------------------------------------------ R. preprocessor (verbatim)
+    P3 = '#version 320 es\nprecision highp float;\nout vec4 color;\n'
+    R('pp_ifndef_else', P3 + '#ifndef MISSING\n#define V .25\n#else\n#define V .75\n#endif\nvoid main(){color=vec4(V);}\n')
+    R('pp_elif_chain', P3 + '#define MODE 2\n#if MODE == 1\n#define V .1\n#elif MODE == 2\n#define V .2\n#else\n#define V .3\n#endif\nvoid main(){color=vec4(V);}\n')
+    R('pp_if_defined_operator', P3 + '#define A\n#if defined(A) && !defined B\n#define V .25\n#else\n#define V .75\n#endif\nvoid main(){color=vec4(V);}\n')
+    R('pp_if_arithmetic_nested', P3 + '#if (1+2)*3 == 9\n#if 7/2 == 3 && -1 < 0 && (5 % 3) == 2 && (1 << 3) == 8\n#define V .25\n#endif\n#endif\nvoid main(){color=vec4(V);}\n')
+    R('pp_if_undefined_macro_invalid', P3 + '#if UNDEFINED_THING\n#endif\nvoid main(){color=vec4(1.);}\n', ok=False, valid=False,
+      note='GLSL ES does not treat an undefined macro in #if as 0')
+    R('pp_if_unterminated_invalid', P3 + '#if 1\nvoid main(){color=vec4(1.);}\n', ok=False, valid=False)
+    R('pp_else_without_if_invalid', P3 + '#else\n#endif\nvoid main(){color=vec4(1.);}\n', ok=False, valid=False)
+    R('pp_define_redefined_invalid', P3 + '#define V .25\n#define V .5\nvoid main(){color=vec4(V);}\n', ok=False, valid=False)
+    R('pp_define_identical_redefinition', P3 + '#define V .25\n#define V .25\nvoid main(){color=vec4(V);}\n')
+    R('pp_define_self_referential', P3 + '#define a a\nvoid main(){float a=.5;color=vec4(a);}\n', note='a macro is not expanded inside its own expansion')
+    R('pp_define_mutually_recursive', P3 + '#define X Y\n#define Y X\nvoid main(){float X=.5;color=vec4(X);}\n')
+    R('pp_function_macro_paren_args', P3 + '#define ADD(a,b) ((a)+(b))\nvoid main(){color=vec4(ADD(vec2(.1,.2).x,ADD(.1,max(.1,.2))));}\n',
+      note='commas inside nested parentheses do not split macro arguments')
+    R('pp_function_macro_name_without_parens', P3 + '#define F(x) (x*2.)\nvoid main(){float F=.25;color=vec4(F);}\n',
+      note='a function-like macro name without ( is not expanded')
+    R('pp_line_macro_value', P3 + '#line 40\nvoid main(){color=vec4(float(__LINE__)/100.);}\n', note='GLSL ES 3.00: the line after #line 40 is 40')
+    R('pp_undef_then_use_invalid', P3 + '#define V .25\n#undef V\nvoid main(){color=vec4(V);}\n', ok=False, valid=False)
+    R('pp_undef_builtin_macro_invalid', P3 + '#undef __LINE__\nvoid main(){color=vec4(1.);}\n', ok=False, valid=False)
+    R('pp_define_gl_prefix_invalid', P3 + '#define GL_MINE 1\nvoid main(){color=vec4(1.);}\n', ok=False, valid=False)
+    R('pp_token_pasting', P3 + '#define CAT(a,b) a##b\nvoid main(){float xy=.5;color=vec4(CAT(x,y));}\n', ok=False)
+
+    # ------------------------------------------------------------------ S. qualifiers and built-ins
+    C('qual_invariant_redeclaration', 'invariant color; void main(){color=vec4(1.);}')
+    C('qual_sample_in', 'void main(){color=vec4(uv,0.,1.);}', decl='sample in vec2 uv;out vec4 color;')
+    C('bi_interpolate_at_centroid', 'void main(){color=vec4(interpolateAtCentroid(uv),0.,1.);}', ok=False, decl='in vec2 uv;out vec4 color;')
+    C('bi_texture_lod_family', 'void main(){color=textureLod(t,vec2(.5),0.)+textureProj(t,vec3(.5,.5,1.))+textureGrad(t,vec2(.5),vec2(0.),vec2(0.));}',
+      decl='uniform sampler2D t;out vec4 color;')
+    C('bi_texture_cube', 'void main(){color=texture(env,vec3(.3,.5,-1.))+textureLod(env,vec3(1.,0.,0.),2.);}', decl='uniform samplerCube env;out vec4 color;')
+    C('bi_texture_3d', 'void main(){color=texture(vol,vec3(.5))+texelFetch(vol,ivec3(1),0);}', decl='uniform highp sampler3D vol; // @wrap{clamp}\nout vec4 color;')
+    C('bi_texture_2d_array', 'void main(){color=texture(layers,vec3(.5,.5,1.));}', decl='uniform highp sampler2DArray layers;out vec4 color;')
+    C('bi_texture_gather', 'void main(){color=textureGather(t,vec2(.5),1)+textureOffset(t,vec2(.5),ivec2(1,0));}', decl='uniform sampler2D t;out vec4 color;')
+    C('bi_sampler_array_dynamic', 'vec4 f(sampler2D s){return texture(s,vec2(.5));}void main(){color=texture(t[k],vec2(.5))+f(t[k]);}', decl='uniform sampler2D t[3];uniform int k;out vec4 color;')
+    C('cf_discard_with_derivative', 'void main(){float d=dFdx(gl_FragCoord.x);if(d>0.)discard;color=vec4(d);}')
+    C('bi_ldexp', 'void main(){color=vec4(ldexp(.5,2)/2.);}', ok=False)
+    C('bi_bitfield_insert_reverse', 'void main(){color=vec4(float(bitfieldInsert(0,3,2,2)+bitfieldReverse(1))/16.);}', ok=False)
+    C('bi_mat4_inverse_determinant', 'void main(){mat4 m=mat4(2.);m[3]=vec4(1.,2.,3.,1.);mat4 i=inverse(m);color=vec4(i[3].xyz/-2.,determinant(m)/16.);}')

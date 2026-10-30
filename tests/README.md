@@ -45,12 +45,13 @@ https://skia.googlesource.com/skia.git/+/5f4f454b9662b83facd71dcbc6e8ac105660e93
 
 # Edge-case corpus (`edge_cases.py`)
 
-~570 adversarial fragments registered from `generate_corpus.py`: output-variable
+~680 adversarial fragments registered from `generate_corpus.py`: output-variable
 lowering, SkSL-reserved names, literals/conversions, operator and swizzle traps,
 arrays/structs/scope/globals, control flow (loops, switch), overloads and
 `out`-argument aliasing, builtins, qualifiers, headers/directives/lexing, stress
-sizes and realistic shader shapes. Conventions: `Unsupported` = valid GLSL ES
-3.20 the transpiler refuses; `Invalid` = not valid GLSL, must be diagnosed;
+sizes, realistic shader shapes, GLSL ES 1.00 shaders, preprocessor conditionals
+and macros, and software-derivative edge cases. Conventions: `Unsupported` =
+valid GLSL ES 3.20 the transpiler refuses; `Invalid` = not valid GLSL, must be diagnosed;
 `note` explains the trap or the decision a case forces; `target_expect: reject`
 marks ES2-strict Skia limits (dynamic loops, `%`, bit ops, `switch`). Many
 expectations are predictions to be corrected against the pinned compiler.
@@ -73,3 +74,15 @@ where skslc.exe must sit in the same folder as Skia's `sksl_*.sksl` module files
 # Array check (`check_arrays.py`)
 
 `python tests/check_arrays.py --transpiler build/glsl-to-sksl.exe` renders shaders that construct, assign, compare, select, sequence and return arrays (and structs containing arrays) with Skia's CPU backend and compares each result with the value GLSL defines, including cases where evaluation order or skipped operands would change the result. It also checks that generated names keep the shader's identifiers. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.
+
+# Texture check (`check_textures.py`)
+
+`build\.venv-validation\Scripts\python.exe tests\check_textures.py --transpiler build\glsl-to-sksl.exe` renders shaders that sample 2D, cube, 3D and array textures, use texture bias, LOD and gradients, texelFetch, textureSize, textureGather and textureOffset, sampler parameters and arrays of samplers, and the GLSL ES 1.00 texture families, with Skia's CPU backend. Each rendered result is compared with the value GL's sampling rules give, computed in numpy from the same texture data, and the maximum error is reported per check. Requires skia-python from `requirements-validation.txt` (run it with the validation venv Python); the expected summary is `failures: 0`.
+
+# Integer operation check (`check_integer_ops.py`)
+
+`build\.venv-validation\Scripts\python.exe tests\check_integer_ops.py --transpiler build\glsl-to-sksl.exe` renders integer `%`, `&`, `|`, `^`, `<<`, `>>`, their compound assignments, vector forms and `~` as translated by the generated software helpers, and compares each result with 32-bit two's complement GLSL results over edge and random operands. Remainders with negative operands or a zero divisor are skipped, and shift counts are reduced modulo 32, because GLSL leaves those cases undefined or implementation-defined. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.
+
+# Loop check (`check_loops.py`)
+
+`build\.venv-validation\Scripts\python.exe tests\check_loops.py --transpiler build\glsl-to-sksl.exe` renders `while`, `do-while` and `for` loops that the transpiler lowers to bounded iteration (counter proofs, `while(false)`, `@maxiter` annotations and `for` loops with a separate init, no increment or a step inside the body), including `continue` and conditions with side effects, and compares the rendered pixel with the GLSL result. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.

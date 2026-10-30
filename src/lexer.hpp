@@ -19,6 +19,7 @@ struct Token {
 struct LexOutput {
     std::vector<Token> tokens;  // ends with a Newline token; no End token
     std::vector<Loc> continuations; // positions of backslash-newline line splices
+    std::vector<Comment> comments;
 };
 // Phase 1-3 of compilation: line splicing, comment removal and preprocessing-token formation.
 // Characters that cannot form tokens become Invalid tokens, reported only if they survive preprocessing.

@@ -775,9 +775,13 @@ ParsedShader parseShader(const std::string& source, DiagnosticSink& sink) {
     out.tokens=classify(pp,lexed,sink);
     if(sink.errors || !checkDelimiters(out.tokens,sink))return out;
     out.unit=parse(out.tokens,out.version,sink);
+    if(out.unit)out.unit->comments=lexed.comments;
     if(out.unit && out.version==100)
         for(const auto& x:out.extensions)
+        {
             if(x.name=="GL_OES_standard_derivatives"||x.name=="all")out.unit->standardDerivatives=x.behavior!="disable";
+            if(x.name=="GL_EXT_shader_texture_lod"||x.name=="all")out.unit->shaderTextureLod=x.behavior!="disable";
+        }
     return out;
 }
 }

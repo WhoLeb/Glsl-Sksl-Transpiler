@@ -48,10 +48,13 @@ LexOutput lex(const std::string& source, DiagnosticSink& sink) {
     }
     at.push_back({line,col});
     auto& tokens=out.tokens;
-    bool space=false;
+    bool space=false, lineStart=true;
     auto push=[&](TokenKind kind,std::size_t b,std::size_t e) {
         Token t; t.kind=kind; t.text=text.substr(b,e-b); t.loc=at[b]; t.spaceBefore=space;
-        space=false; tokens.push_back(std::move(t));
+        space=false; lineStart=kind==TokenKind::Newline; tokens.push_back(std::move(t));
+    };
+    auto comment=[&](std::size_t b,std::size_t e,std::size_t textBegin,std::size_t textEnd) {
+        out.comments.push_back({at[b],at[e>b?e-1:b].line,text.substr(textBegin,textEnd-textBegin),lineStart});
     };
     static const char* const longPuncts[]={"<<=",">>=","++","--","<<",">>","<=",">=","==","!=","&&","||","^^",
         "+=","-=","*=","/=","%=","&=","^=","|=","##"};
@@ -61,14 +64,19 @@ LexOutput lex(const std::string& source, DiagnosticSink& sink) {
         const char c=text[p];
         if(c=='\n'){push(TokenKind::Newline,p,p+1);++p;continue;}
         if(c==' '||c=='\t'||c=='\v'||c=='\f'){space=true;++p;continue;}
-        if(c=='/' && p+1<m && text[p+1]=='/') {while(p<m && text[p]!='\n')++p;space=true;continue;}
+        if(c=='/' && p+1<m && text[p+1]=='/') {
+            const std::size_t b=p;
+            while(p<m && text[p]!='\n')++p;
+            comment(b,p,b+2,p);
+            space=true;continue;
+        }
         if(c=='/' && p+1<m && text[p+1]=='*') {
             const std::size_t b=p; bool closed=false;
             for(p+=2;p+1<m;++p)if(text[p]=='*' && text[p+1]=='/'){p+=2;closed=true;break;}
             if(!closed) {
                 p=m;
                 sink.error(at[b],"lex.unterminated-comment","Unterminated comment","close the comment with '*/'");
-            }
+            } else comment(b,p,b+2,p-2);
             space=true;continue;
         }
         if(letter(c)) {

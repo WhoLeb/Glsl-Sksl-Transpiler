@@ -4,8 +4,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
+#include <functional>
 #include <map>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 #ifdef _MSC_VER
 #define GLSL_SKSL_NOINLINE __declspec(noinline)
@@ -25,12 +28,31 @@ using sema::Type;
 using sema::Direction;
 
 // Identifiers that GLSL ES allows but SkSL reserves for its own types and intrinsics.
-const std::set<std::string> kReserved={
-    "half","half2","half3","half4","half2x2","half3x3","half4x4","half2x3","half2x4","half3x2","half3x4","half4x2","half4x3",
-    "float2","float3","float4","float2x2","float3x3","float4x4","float2x3","float2x4","float3x2","float3x4","float4x2","float4x3",
-    "int2","int3","int4","uint2","uint3","uint4","bool2","bool3","bool4","short","short2","short3","short4",
-    "ushort","ushort2","ushort3","ushort4","shader","colorFilter","blender","inline","noinline",
-    "saturate","unpremul","toLinearSrgb","fromLinearSrgb"};
+// Mirrors Skia's src/sksl/lex/sksl.lex (keywords, RESERVED) and SkSLBuiltinTypes.cpp; GLSL ES 1.00
+// leaves many of them free (uint, mat2x3, layout, buffer, case, ...).
+const std::set<std::string> kReserved=[] {
+    std::set<std::string> s={
+        "case","flat","noperspective","inline","noinline","readonly","writeonly","buffer","layout","workgroup","pixel_local",
+        "atomic","attribute","varying","precision","invariant","asm","class","union","enum","typedef","template","this",
+        "packed","goto","volatile","public","static","extern","external","interface","long","double","fixed","unsigned",
+        "superp","input","output","sizeof","cast","namespace","using",
+        "half","uint","short","ushort","shader","colorFilter","blender","sampler","sampler2D","samplerExternalOES",
+        "sampler2DRect","texture2D","textureExternalOES","texture2DRect","readonlyTexture2D","writeonlyTexture2D",
+        "subpassInput","subpassInputMS","isubpassInput","isubpassInputMS","usubpassInput","usubpassInputMS",
+        "atomicUint","atomic_uint","saturate","unpremul","toLinearSrgb","fromLinearSrgb"};
+    const std::string n[]={"2","3","4"};
+    for(const auto& a:n) {
+        for(const char* v:{"half","float","int","uint","short","ushort","bool","uvec","hvec","dvec","fvec","dmat"})s.insert(v+a);
+        for(const auto& b:n)for(const char* m:{"half","float","mat","dmat"})s.insert(m+a+"x"+b);
+    }
+    const char* dims[]={"1D","2D","3D","1DArray","2DArray","2DRect","2DMS","2DMSArray","Buffer","Cube","CubeArray"};
+    for(const char* p:{"iimage","image","isampler","itexture","uimage","usampler","utexture"})for(const char* d:dims)s.insert(std::string(p)+d);
+    for(const char* p:{"sampler","texture"})for(const char* d:{"1D","1DArray","2DArray","2DMS","2DMSArray","3D","Buffer","Cube","CubeArray"})
+        s.insert(std::string(p)+d);
+    for(const char* d:{"1DArrayShadow","1DShadow","2DArrayShadow","2DShadow","2DRectShadow","3DRect","CubeArrayShadow","CubeShadow","Shadow"})
+        s.insert(std::string("sampler")+d);
+    return s;
+}();
 
 const char* const kComponents="xyzw";
 
@@ -119,25 +141,36 @@ public:
         retName=fresh("ret"); doneName=fresh("done"); resultName=fresh("result");
     }
 
-    std::string run() {
+    std::string run(std::vector<SourceSpan>& origins) {
         if(!program.main)return {};
-        if(!program.writesFragColor && program.outputs.empty())
+        if(!program.writesFragColor && !program.writesFragData && program.outputs.empty())
             error(Loc{1,1},"output","shader without an output: it neither writes gl_FragColor nor declares an 'out vec4'",
                 "write the color to gl_FragColor (GLSL ES 1.00) or to an 'out vec4' variable");
         nameStructs();
         analyzeFunctions();
+        {
+            std::set<const sema::Function*> plain;
+            collectSpecs(program.main,{},plain);
+        }
         lanes=quad(program.main);
         std::vector<const sema::Function*> order;
         std::set<const sema::Function*> seen;
         visitOrder(program.main,seen,order);
-        for(const sema::Function* f:order)if(functions[f].fragCoord)usesFragCoord=true;
+        for(const sema::Function* f:order) {
+            if(functions[f].fragCoord)usesFragCoord=true;
+            if(f!=program.main && f->definition && discards(*f->definition->body) && discardedName.empty())discardedName=fresh("discarded");
+        }
 
         std::string structs, globals, code;
-        out=&structs; structDefinitions();
-        out=&globals; generatedGlobals(); globalDeclarations();
-        out=&code;
+        std::vector<SourceSpan> structOrigins, globalOrigins, codeOrigins;
+        out=&structs; outOrigins=&structOrigins; structDefinitions();
+        out=&globals; outOrigins=&globalOrigins; generatedGlobals(); globalDeclarations();
+        out=&code; outOrigins=&codeOrigins;
         for(const sema::Function* f:order)function(*f);   // main last: it becomes the SkSL main
-        return helpers.definitions()+structs+globals+code;
+        const std::string definitions=helpers.definitions()+integerDefinitionsText+textureDefinitions();
+        origins.assign(static_cast<std::size_t>(std::count(definitions.begin(),definitions.end(),'\n')),SourceSpan{});
+        for(const auto* part:{&structOrigins,&globalOrigins,&codeOrigins})origins.insert(origins.end(),part->begin(),part->end());
+        return definitions+structs+globals+code;
     }
 
 private:
@@ -148,6 +181,10 @@ private:
     };
     struct StmtInfo { bool sync=false, returns=false, jumps=false; };          // jumps: break/continue that leave it
     struct Access { std::set<const Symbol*> reads, writes; bool readsGlobals=false, writesGlobals=false; };
+    // A sampler as the uniform (and element) it names; index: a non-constant index into an array of samplers.
+    struct SamplerRef { const Symbol* uniform=nullptr; int element=-1; const Expr* index=nullptr; };
+    using Binding=std::map<const Symbol*,SamplerRef>;         // sampler parameter -> sampler
+    struct Spec { std::vector<SamplerRef> args; Binding binding; std::string name; };   // copy of a function for its samplers
 
     const ast::TranslationUnit& unit;
     const sema::Program& program;
@@ -155,12 +192,13 @@ private:
     mutable std::map<std::string,std::string> renamed;      // SkSL-reserved identifiers -> replacement
     mutable std::map<std::pair<std::string,int>,std::string> laneNames;
     std::string colorName, coordName, fragCoordName, quadName, retName, doneName, resultName;
+    std::string discardedName;              // set by discard in functions other than main; empty when none does
     BuiltinHelpers helpers;
     DiagnosticSink& sink;
     std::map<const sema::Function*,FunctionInfo> functions;
     std::map<const sema::StructDef*,std::string> structNames;
     std::unordered_map<const Stmt*,StmtInfo> stmtInfo;
-    bool lanes=false, usesFragCoord=false;
+    bool lanes=false, usesFragCoord=false, usesPointCoord=false;
 
     // State of the function being emitted.
     const sema::Function* current=nullptr;
@@ -174,17 +212,58 @@ private:
     std::vector<const ast::Declarator*> globalArrays;       // global arrays initialized at the start of main
     int temps=0;
     std::string* out=nullptr;
+    std::vector<SourceSpan>* outOrigins=nullptr;   // GLSL source per line of *out
     int indent=0;
+    SourceSpan origin;                      // GLSL source of the statement or declaration being written
+    struct From {
+        Emitter& e; SourceSpan saved;
+        From(Emitter& e, Loc at, unsigned endLine):e(e),saved(e.origin){e.origin={at,std::max(at.line,endLine)};}
+        ~From(){e.origin=saved;}
+    };
+    static unsigned lastLine(const Expr& e) {
+        unsigned l=e.loc.line;
+        for(const auto& o:e.operands)l=std::max(l,lastLine(*o));
+        return l;
+    }
+    std::unordered_map<const Stmt*,unsigned> lastLines;
+    unsigned lastLine(const Stmt& s) {
+        const auto found=lastLines.find(&s);
+        if(found!=lastLines.end())return found->second;
+        unsigned l=s.loc.line;
+        for(const Expr* e:{s.expr.get(),s.step.get()})if(e)l=std::max(l,lastLine(*e));
+        if(s.decl)for(const auto& v:s.decl->declarators)l=std::max(l,v.init?std::max(v.loc.line,lastLine(*v.init)):v.loc.line);
+        for(const auto& x:s.body)l=std::max(l,lastLine(*x));
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)l=std::max(l,lastLine(*x));
+        return lastLines[&s]=l;
+    }
+    // Where the declaration of a global variable starts, qualifiers included.
+    Loc declarationStart(const Symbol* s) const {
+        for(const auto& d:unit.decls)
+            if(d->kind==DeclKind::Variable)for(const auto& v:d->declarators)if(v.symbol==s)return d->loc;
+        return s?s->loc:Loc{};
+    }
 
     // ------------------------------------------------------------------ output
     void line(const std::string& s) {
         out->append(static_cast<std::size_t>(indent)*4,' ');
         *out+=s;
         *out+='\n';
+        outOrigins->insert(outOrigins->end(),static_cast<std::size_t>(std::count(s.begin(),s.end(),'\n'))+1,origin);
     }
+    // A construct SkSL lacks was replaced by a software implementation; `replacement` is SkSL text
+    // that marks the replacement in the generated code.
+    void replaced(const Expr& e, const std::string& code, const std::string& message, const std::string& suggestion, const std::string& replacement) {
+        if(!notedReplacements.insert(&e).second)return;
+        sink.warning(e.loc,"software."+code,message,suggestion);
+        sink.hint(replacement);
+    }
+    std::set<const Expr*> notedReplacements;
     void error(Loc at, const std::string& code, const std::string& message, const std::string& suggestion={}) {
         sink.error(at,"unsupported."+code,"Unsupported "+message,suggestion);
+        if(code.compare(0,10,"derivative")==0)refusedDerivative=true;
     }
+    // A refused derivative stays a plain dFdx call in the SkSL returned with the error.
+    bool refusedDerivative=false;
     // A generated name that no identifier of the shader and no other generated name uses.
     std::string fresh(const std::string& base) const {
         std::string name=base;
@@ -224,19 +303,40 @@ private:
         if(!s)return "?";
         switch(s->storage) {
         case Storage::BuiltIn:
-            if(s->name=="gl_FragColor")return laneName(colorName,lane);
+            if(s->name=="gl_FragColor"||s->name=="gl_FragData")return laneName(colorName,lane);
             if(s->name=="gl_FragCoord")return laneName(fragCoordName,lane);
+            if(s->name=="gl_FrontFacing")return "true";
+            if(s->name=="gl_PointCoord")return "("+laneName(fragCoordName,lane)+".xy / "+resolution+" * float2(1.0, -1.0) + float2(0.0, 1.0))";
+            if(s->name=="gl_DepthRange")return typeName(s->type)+"(0.0, 1.0, 1.0)";
             return s->name;
         case Storage::Output: return laneName(colorName,lane);
         case Storage::Uniform: return s->name;
         case Storage::Global: return s->constQualified?userName(s->name):laneName(userName(s->name),lane);
-        default: return shared.count(s)?userName(s->name):laneName(userName(s->name),lane);
+        default: {
+            const std::string name=s->generated?generatedName(s):userName(s->name);
+            return shared.count(s)?name:laneName(name,lane);
+        }
         }
     }
+    // Variables the semantic pass introduces get names no identifier of the shader uses.
+    std::string generatedName(const Symbol* s) const {
+        auto& n=generatedNames[s];
+        if(n.empty())n=fresh(s->name);
+        return n;
+    }
+    mutable std::map<const Symbol*,std::string> generatedNames;
     // A function that computes derivatives has one version, which takes all four lanes.
-    std::string functionName(const sema::Function* f, int lane) {
-        if(laneFunction(f))return laneName(userName(f->name),lane);
-        return userName(f->name);
+    // Functions that take samplers have a copy per sampler (spec).
+    std::string functionName(const sema::Function* f, int lane, const Spec* spec) {
+        const std::string name=spec?spec->name:userFunctionName(f->name);
+        return laneFunction(f)?laneName(name,lane):name;
+    }
+    // GLSL ES 1.00 lets shaders define round, inverse, abs(int), ...: names SkSL gives to its intrinsics.
+    std::string userFunctionName(const std::string& name) const {
+        if(!sema::isBuiltinFunctionName(name,320))return userName(name);
+        const auto it=renamed.find(name);
+        if(it!=renamed.end())return it->second;
+        return renamed[name]=fresh(name+"_");
     }
 
     // ------------------------------------------------------------------ analysis
@@ -253,9 +353,9 @@ private:
     // Variables with one value per pixel outside any function: user globals, the output and the coordinate.
     static bool perPixel(const Symbol* s) {
         if(!s)return false;
-        if(s->storage==Storage::Output)return true;
+        if(s->storage==Storage::Output||s->storage==Storage::Input)return true;
         if(s->storage==Storage::Global)return !s->constQualified;
-        if(s->storage==Storage::BuiltIn)return s->name=="gl_FragColor"||s->name=="gl_FragCoord";
+        if(s->storage==Storage::BuiltIn)return s->name=="gl_FragColor"||s->name=="gl_FragData"||s->name=="gl_FragCoord"||s->name=="gl_PointCoord";
         return false;
     }
 
@@ -266,7 +366,8 @@ private:
             auto visit=[&](const Expr& e) {
                 if(e.kind==ExprKind::Name && perPixel(e.symbol)) {
                     info.touches=true;
-                    if(e.symbol->name=="gl_FragCoord" && e.symbol->storage==Storage::BuiltIn)info.fragCoord=true;
+                    if((e.symbol->name=="gl_FragCoord"||e.symbol->name=="gl_PointCoord") && e.symbol->storage==Storage::BuiltIn)info.fragCoord=true;
+                    if(e.symbol->name=="gl_PointCoord" && e.symbol->storage==Storage::BuiltIn)usesPointCoord=true;
                 }
                 if(isWrite(e) && perPixel(root(*e.operands[0])))info.writes=true;
                 if(e.kind!=ExprKind::Call || !e.function)return;
@@ -525,11 +626,15 @@ private:
         case ExprKind::IntLiteral: case ExprKind::UintLiteral: intText(o,e.intValue); break;
         case ExprKind::FloatLiteral: floatLiteral(o,e); break;
         case ExprKind::BoolLiteral: o+=e.intValue?"true":"false"; break;
-        case ExprKind::Name: o+=symbolName(e.symbol,lane); break;
-        case ExprKind::Unary: if(!folded(o,e))unary(o,e,lane); break;
+        case ExprKind::Name:
+            if(e.symbol && e.symbol->storage==Storage::BuiltIn)builtinVariable(e);
+            if(e.symbol && e.symbol->storage==Storage::BuiltIn && e.symbol->value && constantText(o,*e.symbol->value))break;
+            o+=e.symbol?symbolName(e.symbol,lane):e.text;   // undeclared names stay as written
+            break;
+        case ExprKind::Unary: if(!folded(o,e) && !integerOperator(o,e,lane))unary(o,e,lane); break;
         case ExprKind::Postfix: expr(o,*e.operands[0],lane,16); o+=e.text; break;
         case ExprKind::Binary:
-            if(folded(o,e))break;
+            if(folded(o,e)||integerOperator(o,e,lane))break;
             if((e.text=="=="||e.text=="!=") && aggregate(e.operands[0]->type)){comparison(o,e,lane);break;}
             expr(o,*e.operands[0],lane,binaryPrecedence(e.text));
             o+=" "+e.text+" ";
@@ -538,6 +643,7 @@ private:
         case ExprKind::Assign:
             if(aggregate(e.type))
                 notExpressible(e,"assignment","SkSL cannot assign arrays (or structs containing arrays) as a whole");
+            if(integerOperator(o,e,lane))break;
             expr(o,*e.operands[0],lane,15);
             o+=" "+e.text+" ";
             expr(o,*e.operands[1],lane,2);
@@ -559,6 +665,12 @@ private:
             break;
         case ExprKind::Index:
             if(foldedElement(o,e))break;
+            if(isBuiltin(*e.operands[0],"gl_FragData")) {
+                // gl_FragData has gl_MaxDrawBuffers = 1 element: any valid index selects the color.
+                builtinVariable(*e.operands[0]);
+                o+=laneName(colorName,lane);
+                break;
+            }
             expr(o,*e.operands[0],lane,16);
             o+='[';
             expr(o,*e.operands[1],lane,0);
@@ -577,8 +689,11 @@ private:
     }
     void arguments(std::string& o, const Expr& e, std::size_t first, int lane) {
         o+='(';
+        bool any=false;
         for(std::size_t i=first;i<e.operands.size();++i) {
-            if(i>first)o+=", ";
+            if(samplerType(e.operands[i]->type))continue;   // functions get a copy per sampler instead
+            if(any)o+=", ";
+            any=true;
             expr(o,*e.operands[i],lane,2);
         }
         o+=')';
@@ -596,7 +711,7 @@ private:
             const Expr& a=*e.operands[i];
             const int k=a.type.components();
             if(i)o+=", ";
-            if(a.type.isMatrix() && !e.type.isMatrix() && !sideEffects(a)) {
+            if(a.type.isMatrix() && !e.type.isMatrix() && (!sideEffects(a) || hoisted.count(&a) || computed(a,lane))) {
                 const int take=std::min(k,remaining);
                 for(int c=0;c<take;++c) {
                     if(c)o+=", ";
@@ -651,18 +766,584 @@ private:
         const sema::Function* f=e.function;
         if(aggregate(e.type))notExpressible(e,"call","SkSL functions cannot return arrays (or structs containing arrays)");
         if(!f)o+=e.text;
-        else if(f->builtin) {
-            if(sema::isDerivative(f->name))
+        else if(isTextureCall(e)) {
+            textureLookup(o,e,lane);
+            return;
+        } else if(f->builtin) {
+            if(sema::isDerivative(f->name) && !refusedDerivative)
                 sink.error(e.loc,"internal","Internal error: derivative "+ast::toGlsl(e)+" was not lowered");
-            o+=BuiltinHelpers::needed(*f)?helpers.use(*f):e.text;
-        } else o+=functionName(f,lane);
+            if(BuiltinHelpers::needed(*f)) {
+                const std::string helper=helpers.use(*f);
+                replaced(e,"builtin","built-in "+quoted(sema::signature(*f))+" is not available in SkSL runtime shaders; it is replaced by the generated function "+
+                    quoted(helper)+", which computes the result the GLSL ES specification defines","no change needed",helper+"(");
+                o+=helper;
+            } else o+=e.text;
+        } else if(dynamicSamplerCall(e)) {
+            if(f->returnType.base==Type::Void)
+                valueError(e,"sampler-argument","call "+quoted(e)+": it passes an element of an array of samplers chosen at run time to a void function, "
+                    "which the transpiler calls through a selection among copies of the function, and SkSL selects void calls only in a statement of their own",
+                    "make the call a statement of its own");
+            o+=dynamicCall(e,lane,samplerArgs(e));
+            return;
+        } else o+=functionName(f,lane,calleeSpec(e));
         arguments(o,e,0,lane);
+    }
+    // ------------------------------------------------------------------ integer operators
+    // SkSL runtime shaders have no integer remainder or bit operations. Generated functions compute
+    // them on the 32-bit two's complement value with the integer arithmetic SkSL has, without
+    // overflow and without relying on how negative numbers are divided: the sign bit is handled
+    // apart, and the other 31 bits, as a non-negative number, through division by 2. ~a is -1 - a.
+    // Compound assignments (a &= b) call a version that takes the target as an inout parameter
+    // and returns the new value, so the target is evaluated once.
+    GLSL_SKSL_NOINLINE bool integerOperator(std::string& o, const Expr& e, int lane) {
+        static const std::map<std::string,std::string> ops={{"%","mod"},{"&","and"},{"|","or"},{"^","xor"},{"<<","shl"},{">>","shr"},
+            {"%=","mod"},{"&=","and"},{"|=","or"},{"^=","xor"},{"<<=","shl"},{">>=","shr"}};
+        if(e.type.base!=Type::Int || !e.type.isBasic())return false;
+        if(e.kind==ExprKind::Unary && e.text=="~") {
+            o+="("+(e.type.isScalar()?std::string("-1"):typeName(e.type)+"(-1)")+" - ";
+            expr(o,*e.operands[0],lane,binaryPrecedence("-")+1);
+            o+=")";
+            noteInteger(e);
+            return true;
+        }
+        const auto it=ops.find(e.text);
+        if(it==ops.end() || (e.kind!=ExprKind::Binary && e.kind!=ExprKind::Assign))return false;
+        const bool assign=e.kind==ExprKind::Assign;
+        const std::string name=integerHelper(it->second,e.type.rows,assign);
+        // A scalar operand of a vector operation is widened.
+        auto operand=[&](const Expr& x) {
+            std::string t;
+            expr(t,x,lane,2);
+            return x.type.rows<e.type.rows?typeName(e.type)+"("+t+")":t;
+        };
+        o+=name+"("+operand(*e.operands[0])+", "+operand(*e.operands[1])+")";
+        noteInteger(e);
+        return true;
+    }
+    void noteInteger(const Expr& e) {
+        replaced(e,"operator","operator "+quoted(e.text)+" is computed by a generated function: SkSL runtime shaders have no integer remainder or bit "
+            "operations, so it works on the 32-bit two's complement bits with integer arithmetic, with the result GLSL defines","no change needed",
+            e.text=="~"?"-1 - ":"glsl_");
+    }
+    std::map<std::string,std::string> integerNames;      // operation -> generated name
+    std::set<std::string> integerDefined;                // operation and width already written
+    std::string integerDefinitionsText;
+    std::string integerHelper(const std::string& op, int rows, bool assign) {
+        const std::string scalarName=integerName(op);
+        if(integerDefined.insert(op+"1").second) {
+            std::string& d=integerDefinitionsText;
+            const std::string low="2147483647 + 1";   // a + 2^31 without overflow for a < 0
+            // Skia's CPU backend also evaluates lanes that a branch or return has left, with
+            // arbitrary values there, and an integer division that overflows (INT_MIN / -1)
+            // stops the process. So the functions have no early returns and divide by constants
+            // only; the remainder replaces the divisors 0 (undefined in GLSL) and -1 by 1.
+            if(op=="mod")d+="int "+scalarName+"(int a, int b) {\n    int d = b == 0 || b == -1 ? 1 : b;\n    return a - d * (a / d);\n}\n";
+            else if(op=="and"||op=="or"||op=="xor") {
+                const std::string combine=op=="and"?"u * v":op=="or"?"u + v - u * v":"u + v - 2 * u * v";
+                const std::string sign=op=="and"?"a < 0 && b < 0":op=="or"?"a < 0 || b < 0":"(a < 0) != (b < 0)";
+                d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int x = a < 0 ? a + "+low+" : a;\n"
+                   "    int y = b < 0 ? b + "+low+" : b;\n"
+                   "    int r = 0;\n"
+                   "    int p = 1;\n"
+                   "    for (int i = 0; i < 31; i++) {\n"
+                   "        int u = x - x / 2 * 2;\n"
+                   "        int v = y - y / 2 * 2;\n"
+                   "        r += p * ("+combine+");\n"
+                   "        x /= 2;\n"
+                   "        y /= 2;\n"
+                   "        if (i < 30) { p *= 2; }\n"
+                   "    }\n"
+                   "    return "+sign+" ? r - 2147483647 - 1 : r;\n"
+                   "}\n";
+            } else if(op=="shl")
+                // One bit at a time: bit 30 of the low bits becomes the sign bit.
+                d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int x = a < 0 ? a + "+low+" : a;\n"
+                   "    bool s = a < 0;\n"
+                   "    for (int i = 0; i < 31; i++) {\n"
+                   "        if (i < b) {\n"
+                   "            s = x / 1073741824 == 1;\n"
+                   "            x = (x - x / 1073741824 * 1073741824) * 2;\n"
+                   "        }\n"
+                   "    }\n"
+                   "    return s ? x - 2147483647 - 1 : x;\n"
+                   "}\n";
+            else
+                // The low bits shift down; a negative value then loses 2^31 / 2^b.
+                d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int x = a < 0 ? a + "+low+" : a;\n"
+                   "    int t = 1073741824;\n"
+                   "    for (int i = 0; i < 31; i++) {\n"
+                   "        if (i < b) {\n"
+                   "            x /= 2;\n"
+                   "            if (i > 0) { t /= 2; }\n"
+                   "        }\n"
+                   "    }\n"
+                   "    return b <= 0 ? a : a < 0 ? x - t : x;\n"
+                   "}\n";
+        }
+        const std::string T=rows==1?"int":"int"+std::to_string(rows);
+        if(rows>1 && integerDefined.insert(op+std::to_string(rows)).second) {
+            std::string parts;
+            for(int i=0;i<rows;++i)parts+=std::string(i?", ":"")+scalarName+"(a."+kComponents[i]+", b."+kComponents[i]+")";
+            integerDefinitionsText+=T+" "+scalarName+"("+T+" a, "+T+" b) { return "+T+"("+parts+"); }\n";
+        }
+        if(!assign)return scalarName;
+        const std::string assignName=integerName(op+"Assign");
+        if(integerDefined.insert(op+"Assign"+std::to_string(rows)).second)
+            integerDefinitionsText+=T+" "+assignName+"(inout "+T+" a, "+T+" b) {\n    a = "+scalarName+"(a, b);\n    return a;\n}\n";
+        return assignName;
+    }
+    std::string integerName(const std::string& op) {
+        auto& n=integerNames[op];
+        if(n.empty())n=fresh("glsl_"+op);
+        return n;
+    }
+
+    // ------------------------------------------------------------------ textures
+    // SkSL runtime shaders have no textures; they sample child shaders, which the application
+    // creates so that eval takes GLSL texture coordinates (0 to 1 across the image; see README):
+    //  - sampler2D: one child; eval filters and wraps as the GL sampler does.
+    //  - samplerCube: one child per face (_px, _nx, _py, _ny, _pz, _nz), chosen as GL chooses the
+    //    face; eval filters within the face.
+    //  - sampler3D, sampler2DArray: one child holding the slices or layers stacked from top to
+    //    bottom. The shader reads texel centres, where any filter returns the texel itself, and
+    //    filters and wraps by hand as the annotation of the sampler states.
+    // Lookups that need the size of the texture (textureSize, texelFetch, offsets, gathers, and
+    // every 3D and array lookup) read a generated size uniform. Mipmaps are not available: lookups
+    // with a level of detail, bias or gradients sample the base level.
+    std::map<const sema::Function*,std::deque<Spec>> specs;     // copies of functions that take samplers
+    const Spec* currentSpec=nullptr;
+    std::set<const Symbol*> sizedSamplers;                       // samplers whose size uniform is used
+    std::map<std::pair<const Symbol*,int>,std::string> childNames, sizeNames;
+    std::map<std::tuple<const Symbol*,int,int>,std::string> faceNames;     // (sampler, element, face)
+
+    static bool samplerType(const Type& t){return t.base==Type::Opaque && t.opaque.compare(0,7,"sampler")==0;}
+    static bool samplerParams(const sema::Function& f) {
+        for(const auto& p:f.params)if(samplerType(p.type))return true;
+        return false;
+    }
+    static bool isTextureCall(const Expr& e) {
+        return e.kind==ExprKind::Call && e.function && e.function->builtin && !e.function->params.empty() && samplerType(e.function->params[0].type);
+    }
+    // The uniform sampler (and element) an expression of sampler type names under a binding of
+    // sampler parameters; GLSL only allows names and array elements there.
+    static SamplerRef resolveSampler(const Expr& e, const Binding& binding) {
+        if(e.kind==ExprKind::Name && e.symbol) {
+            if(e.symbol->storage==Storage::Uniform)return {e.symbol,-1,nullptr};
+            const auto it=binding.find(e.symbol);
+            return it==binding.end()?SamplerRef{}:it->second;
+        }
+        if(e.kind==ExprKind::Index) {
+            SamplerRef r=resolveSampler(*e.operands[0],binding);
+            const Expr& i=*e.operands[1];
+            if(i.value && !i.value->values.empty())r.element=i.value->values[0].i;
+            else r.index=&i;
+            return r;
+        }
+        return {};
+    }
+    const Binding& binding() const {static const Binding none; return currentSpec?currentSpec->binding:none;}
+    static bool sameSampler(const SamplerRef& a, const SamplerRef& b){return a.uniform==b.uniform && a.element==b.element && !a.index && !b.index;}
+
+    // Every function reachable from main with the samplers it receives; sizes the lookups need.
+    void collectSpecs(const sema::Function* f, const Binding& bound, std::set<const sema::Function*>& plain) {
+        if(!f || !f->definition || !f->definition->body)return;
+        auto visit=[&](const Expr& e) {
+            if(e.kind!=ExprKind::Call || !e.function)return;
+            if(isTextureCall(e)) {
+                const SamplerRef r=resolveSampler(*e.operands[0],bound);
+                if(r.uniform && needsSize(e,r.uniform->type))sizedSamplers.insert(r.uniform);
+                return;
+            }
+            const sema::Function* g=e.function;
+            if(g->builtin)return;
+            if(!samplerParams(*g)) {
+                if(plain.insert(g).second)collectSpecs(g,{},plain);
+                return;
+            }
+            // An element of an array of samplers chosen by a value that is not constant: every
+            // element gets its copy, and the call selects among them (see dynamicCall).
+            std::vector<std::vector<SamplerRef>> choices(1);
+            for(std::size_t i=0;i<g->params.size() && i<e.operands.size();++i) {
+                if(!samplerType(g->params[i].type))continue;
+                const SamplerRef r=resolveSampler(*e.operands[i],bound);
+                if(!r.uniform)return;
+                std::vector<std::vector<SamplerRef>> next;
+                for(const auto& c:choices) {
+                    if(!r.index){next.push_back(c);next.back().push_back(r);continue;}
+                    for(int k=0;k<r.uniform->type.arrays[0];++k){next.push_back(c);next.back().push_back({r.uniform,k,nullptr});}
+                }
+                choices=std::move(next);
+            }
+            for(const auto& args:choices) {
+                if(findSpec(g,args))continue;
+                Spec spec;
+                spec.args=args;
+                std::size_t k=0;
+                for(std::size_t i=0;i<g->params.size();++i)
+                    if(samplerType(g->params[i].type)) {
+                        if(const Symbol* p=g->definition?g->definition->params[i].symbol:nullptr)spec.binding[p]=args[k];
+                        ++k;
+                    }
+                std::string name=userFunctionName(g->name);
+                for(const SamplerRef& r:args)name+="_"+r.uniform->name+(r.element>=0?std::to_string(r.element):std::string());
+                spec.name=fresh(name);
+                specs[g].push_back(spec);
+                collectSpecs(g,specs[g].back().binding,plain);
+            }
+        };
+        for(const auto& s:f->definition->body->body)eachExpr(*s,visit);
+    }
+    const Spec* findSpec(const sema::Function* f, const std::vector<SamplerRef>& args) const {
+        const auto it=specs.find(f);
+        if(it==specs.end())return nullptr;
+        for(const Spec& s:it->second) {
+            bool same=s.args.size()==args.size();
+            for(std::size_t i=0;same && i<args.size();++i)same=sameSampler(s.args[i],args[i]);
+            if(same)return &s;
+        }
+        return nullptr;
+    }
+    std::vector<SamplerRef> samplerArgs(const Expr& call) const {
+        std::vector<SamplerRef> args;
+        for(std::size_t i=0;i<call.function->params.size() && i<call.operands.size();++i)
+            if(samplerType(call.function->params[i].type))args.push_back(resolveSampler(*call.operands[i],binding()));
+        return args;
+    }
+    static bool dynamicSampler(const std::vector<SamplerRef>& args) {
+        for(const SamplerRef& r:args)if(r.index)return true;
+        return false;
+    }
+    bool dynamicSamplerCall(const Expr& e) const {
+        return e.kind==ExprKind::Call && e.function && !e.function->builtin && samplerParams(*e.function) && dynamicSampler(samplerArgs(e));
+    }
+    // The copy of the called function for the samplers of the call.
+    const Spec* calleeSpec(const Expr& call) {
+        if(!call.function || !samplerParams(*call.function))return nullptr;
+        const std::vector<SamplerRef> args=samplerArgs(call);
+        if(dynamicSampler(args))
+            valueError(call,"sampler-argument","call "+quoted(call)+": it passes an element of an array of samplers chosen at run time to a function "
+                "that computes derivatives or returns an array, which the transpiler calls in statements of their own","pass an element chosen by a constant index");
+        return findSpec(call.function,args);
+    }
+    // A call that passes an element of an array of samplers chosen at run time: a selection among
+    // the copies of the function for each element (the condition picks exactly one).
+    std::string dynamicCall(const Expr& e, int lane, std::vector<SamplerRef> args) {
+        for(std::size_t i=0;i<args.size();++i) {
+            if(!args[i].index)continue;
+            const std::string index=expr(*args[i].index,lane,6);
+            const int count=args[i].uniform->type.arrays[0];
+            std::string s="(";
+            for(int k=0;k<count;++k) {
+                std::vector<SamplerRef> a=args;
+                a[i].index=nullptr; a[i].element=k;
+                s+=k+1<count?index+" == "+std::to_string(k)+" ? "+dynamicCall(e,lane,a)+" : ":dynamicCall(e,lane,a);
+            }
+            return s+")";
+        }
+        std::string call=functionName(e.function,lane,findSpec(e.function,args));
+        arguments(call,e,0,lane);
+        return call;
+    }
+    // The same for a call of a void function, which SkSL cannot select with ?:, as a statement.
+    void dynamicCallStatement(const Expr& e, int lane, std::vector<SamplerRef> args) {
+        for(std::size_t i=0;i<args.size();++i) {
+            if(!args[i].index)continue;
+            const std::string index=expr(*args[i].index,lane,6);
+            const int count=args[i].uniform->type.arrays[0];
+            for(int k=0;k<count;++k) {
+                std::vector<SamplerRef> a=args;
+                a[i].index=nullptr; a[i].element=k;
+                line(k==0?"if ("+index+" == 0) {":k+1<count?"} else if ("+index+" == "+std::to_string(k)+") {":"} else {");
+                ++indent; dynamicCallStatement(e,lane,a); --indent;
+            }
+            line("}");
+            return;
+        }
+        line(dynamicCall(e,lane,args)+";");
+    }
+    static std::string kind(const Type& t){return t.opaque;}
+    static bool softwareFiltered(const Type& t){return t.opaque=="sampler3D"||t.opaque=="sampler2DArray";}
+    static bool needsSize(const Expr& call, const Type& sampler) {
+        const std::string& n=call.function->name;
+        return softwareFiltered(sampler) || n=="textureSize" || n.compare(0,10,"texelFetch")==0 || n.find("Offset")!=std::string::npos || n.compare(0,13,"textureGather")==0;
+    }
+    // Lookups that repeat parts of their computation: cube maps, 3D and array textures, gathers.
+    bool complexLookup(const Expr& e) const {
+        if(!isTextureCall(e))return false;
+        const std::string& n=e.function->name;
+        if(n=="textureSize"||n.compare(0,10,"texelFetch")==0)return false;
+        const SamplerRef r=resolveSampler(*e.operands[0],binding());
+        return r.uniform && (r.uniform->type.opaque!="sampler2D" || n.compare(0,13,"textureGather")==0);
+    }
+    bool lookupPrelude=false;
+    std::string elementName(const Symbol* u, int element) {
+        if(element<0)return u->name;
+        auto& n=childNames[{u,element}];
+        if(n.empty())n=fresh(u->name+"_"+std::to_string(element));
+        return n;
+    }
+    std::string sizeName(const Symbol* u, int element) {
+        auto& n=sizeNames[{u,element}];
+        if(n.empty())n=fresh(elementName(u,element)+"Size");
+        return n;
+    }
+    std::string faceName(const Symbol* u, int element, int face) {
+        static const char* const faces[6]={"px","nx","py","ny","pz","nz"};
+        auto& n=faceNames[{u,element,face}];
+        if(n.empty())n=fresh(elementName(u,element)+"_"+faces[face]);
+        return n;
+    }
+    // Declarations of the child shaders and size uniforms that replace a sampler uniform.
+    void samplerDeclarations(const Symbol& s) {
+        const std::string k=kind(s.type);
+        const int count=s.type.isArray()?s.type.arrays[0]:1;
+        const int first=s.type.isArray()?0:-1;
+        const bool sized=sizedSamplers.count(&s)!=0;
+        for(int i=0;i<count;++i) {
+            const int element=s.type.isArray()?i:-1;
+            if(k=="samplerCube")for(int face=0;face<6;++face)line("uniform shader "+faceName(&s,element,face)+";");
+            else line("uniform shader "+elementName(&s,element)+";");
+            if(sized)line("uniform "+std::string(softwareFiltered(s.type)?"float3 ":"float2 ")+sizeName(&s,element)+";");
+        }
+        const std::string children=count>1?"the child shaders "+quoted(elementName(&s,0))+" to "+quoted(elementName(&s,count-1)):"the child shader "+quoted(elementName(&s,first));
+        const std::string size=sized?"; set "+quoted(sizeName(&s,first))+(count>1?" (one per element)":"")+" to the "+
+            (softwareFiltered(s.type)?"width, height and "+std::string(k=="sampler3D"?"depth":"number of layers")+" of the texture":
+             k=="samplerCube"?"width and height of a face":"width and height of the texture")+" in texels":"";
+        const std::string raw="SkImage::makeRawShader(tileX, tileY, sampling, &SkMatrix::Scale(1.0f / width, 1.0f / height))";
+        std::string message, suggestion;
+        if(k=="sampler2D") {
+            message="sampler "+quoted(s.name)+" becomes "+children+", since SkSL runtime shaders have no textures; the shader samples it with the GLSL "
+                "texture coordinates (0 to 1)";
+            suggestion="create the child with "+raw+": the scale maps 0 to 1 onto the image, and a raw shader returns the texels unconverted, as GLSL "
+                "does; use the wrap and filter modes of the GL sampler, without mipmaps"+size;
+        } else if(k=="samplerCube") {
+            message="cube sampler "+quoted(s.name)+" becomes six child shaders, one per face ("+quoted(faceName(&s,first,0))+" for +X, then -X, +Y, "
+                "-Y, +Z, -Z), since SkSL runtime shaders have no textures; the shader chooses the face and the coordinates in it as GL does";
+            suggestion="create each face like a 2D texture with "+raw+", clamped at the edges; with linear filtering, texels within half a texel of "
+                "a face edge differ from GL, which filters across the edge"+size;
+        } else {
+            message=std::string(k=="sampler3D"?"3D sampler ":"array sampler ")+quoted(s.name)+" becomes "+children+" holding the "+
+                (k=="sampler3D"?"slices":"layers")+" stacked from top to bottom (slice or layer k in rows k * height to (k + 1) * height - 1), since SkSL "
+                "runtime shaders have no textures; the shader reads texel centres and filters ("+(s.nearest?"nearest":"linear")+") and wraps ("+s.wrap+
+                ") them itself";
+            suggestion="create the child from the stacked image with "+raw+" where height is the height of the whole stack; any filter mode works. "
+                "State the GL sampler with '// @filter{nearest|linear} @wrap{repeat|clamp|mirror}' on the sampler (linear and repeat by default)"+size;
+        }
+        sink.warning(s.loc,"software.texture",message,suggestion);
+        sink.hint("uniform shader ");
+    }
+
+    // Generated functions that compute texture coordinates (children cannot be passed to functions).
+    std::map<std::string,std::pair<std::string,std::string>> textureHelpers;   // key -> (name, definition)
+    std::string projectionName;
+    std::vector<std::string> textureHelperOrder;
+    std::string textureHelper(const std::string& key) {
+        auto it=textureHelpers.find(key);
+        if(it!=textureHelpers.end())return it->second.first;
+        // textureProj divides by the last component: one name, overloaded for vec3 and vec4.
+        const bool projection=key=="proj3"||key=="proj4";
+        if(projection && projectionName.empty())projectionName=fresh("glsl_textureProj");
+        const std::string name=projection?projectionName:fresh("glsl_"+key);
+        std::string def;
+        auto use=[&](const std::string& k){return textureHelper(k);};
+        if(key=="cubeFace")
+            // GLSL ES 3.00 table 3.21: the major axis selects the face, then s and t within it.
+            def="float3 "+name+"(float3 r) {\n"
+                "    float3 a = abs(r);\n"
+                "    if (a.x >= a.y && a.x >= a.z) {\n"
+                "        return r.x >= 0.0 ? float3(0.5 - 0.5 * r.z / a.x, 0.5 - 0.5 * r.y / a.x, 0.0) : float3(0.5 + 0.5 * r.z / a.x, 0.5 - 0.5 * r.y / a.x, 1.0);\n"
+                "    }\n"
+                "    if (a.y >= a.z) {\n"
+                "        return r.y >= 0.0 ? float3(0.5 + 0.5 * r.x / a.y, 0.5 + 0.5 * r.z / a.y, 2.0) : float3(0.5 + 0.5 * r.x / a.y, 0.5 - 0.5 * r.z / a.y, 3.0);\n"
+                "    }\n"
+                "    return r.z >= 0.0 ? float3(0.5 + 0.5 * r.x / a.z, 0.5 - 0.5 * r.y / a.z, 4.0) : float3(0.5 - 0.5 * r.x / a.z, 0.5 - 0.5 * r.y / a.z, 5.0);\n"
+                "}\n";
+        else if(key=="gather")
+            // Centre of a texel of the 2x2 footprint of linear filtering at uv.
+            def="float2 "+name+"(float2 uv, float2 size, float2 corner) { return (floor(uv * size - 0.5) + corner + 0.5) / size; }\n";
+        else if(key=="atlas")
+            def="float2 "+name+"(float3 i, float3 size) { return float2(i.x + 0.5, i.z * size.y + i.y + 0.5) / float2(size.x, size.y * size.z); }\n";
+        else if(key.compare(0,5,"wrap_")==0) {
+            const std::string mode=key.substr(5,key.size()-7), T=key.back()=='2'?"float2":"float3";
+            if(mode=="repeat")def=T+" "+name+"("+T+" i, "+T+" size) { return i - size * floor(i / size); }\n";
+            else if(mode=="clamp")def=T+" "+name+"("+T+" i, "+T+" size) { return clamp(i, "+T+"(0.0), size - 1.0); }\n";
+            else def=T+" "+name+"("+T+" i, "+T+" size) {\n    "+T+" m = i - 2.0 * size * floor(i / (2.0 * size)) - size;\n"
+                "    return size - 1.0 - mix(-1.0 - m, m, step("+T+"(0.0), m));\n}\n";
+        } else if(key.compare(0,8,"texel3D_")==0) {
+            const std::string atlas=use("atlas"), wrap=use("wrap_"+key.substr(8)+"_3");
+            def="float2 "+name+"(float3 i, float3 size) { return "+atlas+"("+wrap+"(i, size), size); }\n";
+        } else if(key.compare(0,11,"texelLayer_")==0) {
+            const std::string atlas=use("atlas"), wrap=use("wrap_"+key.substr(11)+"_2");
+            def="float2 "+name+"(float2 i, float layer, float3 size) {\n"
+                "    return "+atlas+"(float3("+wrap+"(i, size.xy), clamp(floor(layer + 0.5), 0.0, size.z - 1.0)), size);\n}\n";
+        } else if(key=="bilinear")
+            def="float4 "+name+"(float4 a, float4 b, float4 c, float4 d, float2 t) { return mix(mix(a, b, t.x), mix(c, d, t.x), t.y); }\n";
+        else if(key=="trilinear")
+            def="float4 "+name+"(float4 a, float4 b, float4 c, float4 d, float4 e, float4 f, float4 g, float4 h, float3 t) {\n"
+                "    return mix(mix(mix(a, b, t.x), mix(c, d, t.x), t.y), mix(mix(e, f, t.x), mix(g, h, t.x), t.y), t.z);\n}\n";
+        else if(key=="proj3")def="float2 "+name+"(float3 p) { return p.xy / p.z; }\n";
+        else if(key=="proj4")def="float2 "+name+"(float4 p) { return p.xy / p.w; }\n";
+        else if(key=="proj3D")def="float3 "+name+"(float4 p) { return p.xyz / p.w; }\n";
+        textureHelpers[key]={name,def};
+        textureHelperOrder.push_back(key);
+        return name;
+    }
+    std::string textureDefinitions() const {
+        std::string s;
+        for(const auto& k:textureHelperOrder)s+=textureHelpers.at(k).second;
+        return s;
+    }
+
+    // A texture built-in, written with the child shaders of its sampler.
+    GLSL_SKSL_NOINLINE void textureLookup(std::string& o, const Expr& e, int lane) {
+        const SamplerRef ref=resolveSampler(*e.operands[0],binding());
+        if(!ref.uniform) {
+            sink.error(e.loc,"internal","Internal error: the sampler of "+ast::toGlsl(e)+" was not resolved");
+            return;
+        }
+        const Symbol* u=ref.uniform;
+        if(!ref.index){o+=lookupText(e,lane,u,ref.element);return;}
+        // An array of samplers indexed by a value that is not constant: a selection among the children.
+        const std::string index=expr(*ref.index,lane,6);
+        const int count=u->type.arrays[0];
+        std::string s;
+        for(int i=0;i+1<count;++i)s+=index+" == "+std::to_string(i)+" ? "+lookupText(e,lane,u,i)+" : ";
+        o+="("+s+lookupText(e,lane,u,count-1)+")";
+    }
+    std::string lookupText(const Expr& e, int lane, const Symbol* u, int element) {
+        const std::string& name=e.function->name;
+        const std::string k=kind(u->type);
+        const bool size=name=="textureSize", fetch=name.compare(0,10,"texelFetch")==0, gather=name.compare(0,13,"textureGather")==0;
+        const bool proj=name.find("Proj")!=std::string::npos, lod=name.find("Lod")!=std::string::npos, grad=name.find("Grad")!=std::string::npos;
+        const bool offset=name.find("Offset")!=std::string::npos && name!="textureGatherOffsets";
+        auto arg=[&](std::size_t i){return i<e.operands.size()?expr(*e.operands[i],lane,2):std::string();};
+        std::size_t next=2;
+        std::string off;
+        if(lod||fetch)++next;
+        if(grad)next+=2;
+        if(offset)off=arg(next++);
+        const bool ignoresLevel=lod||grad||(!fetch && !size && !gather && next<e.operands.size());
+        const std::string S=sizeName(u,element);
+        if(size) {
+            const std::string T=softwareFiltered(u->type)?"int3":"int2";
+            const Expr& level=*e.operands[1];
+            noteLookup(e,u,"textureSize returns the size of the texture from the uniform "+quoted(S)+", which the application sets");
+            if(level.value && level.value->values[0].i==0)return T+"("+S+")";
+            return T+"(max(floor("+S+" / exp2(float("+arg(1)+"))), 1.0))";
+        }
+        // In a prelude, values the lookup repeats are computed once into temporaries.
+        auto once=[&](const char* type, const std::string& text) {
+            if(!lookupPrelude || text.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.")==std::string::npos)return text;
+            const std::string t=temp();
+            line(std::string(type)+" "+t+" = "+text+";");
+            return t;
+        };
+        const std::string P=gather||k!="sampler2D"?once(typeName(e.operands[1]->type).c_str(),arg(1)):arg(1);
+        const std::string level=ignoresLevel?"; the "+std::string(grad?"gradients are":lod?"level of detail is":"bias is")+" ignored, since child shaders have no "
+            "mipmaps: it samples the base level, which matches GL for a texture without mipmaps":"";
+        if(k=="sampler2D") {
+            const std::string child=elementName(u,element);
+            if(fetch) {
+                noteLookup(e,u,"texelFetch reads the texel at its centre, where any filter returns the texel itself"+level);
+                return "float4("+child+".eval((float2("+P+")"+(off.empty()?"":" + float2("+off+")")+" + 0.5) / "+S+"))";
+            }
+            std::string uv=proj?textureHelper(e.operands[1]->type.rows==3?"proj3":"proj4")+"("+P+")":P;
+            if(gather)return gatherText(e,lane,uv,S,off,[&](const std::string& c){return child+".eval("+c+")";},u);
+            if(!off.empty())uv=uv+" + float2("+off+") / "+S;
+            noteLookup(e,u,quoted(e)+" samples the child shader "+quoted(child)+" with "+quoted(child+".eval")+", since SkSL runtime shaders have no textures"+level);
+            return "float4("+child+".eval("+uv+"))";
+        }
+        if(k=="samplerCube") {
+            const std::string F=once("float3",textureHelper("cubeFace")+"("+P+")");
+            auto faces=[&](const std::function<std::string(const std::string&)>& sample) {
+                std::string s="(";
+                for(int f=0;f<5;++f)s+=F+".z < "+std::to_string(f)+".5 ? "+sample(faceName(u,element,f))+" : ";
+                return s+sample(faceName(u,element,5))+")";
+            };
+            if(gather) {
+                noteLookup(e,u,"textureGather reads the four texels of the footprint in the face the direction selects, clamped at its edges");
+                const char c=kComponents[component(e)];
+                static const char* const corners[4]={"float2(0.0, 1.0)","float2(1.0, 1.0)","float2(1.0, 0.0)","float2(0.0, 0.0)"};
+                std::string s="float4(";
+                for(int i=0;i<4;++i)s+=std::string(i?", ":"")+faces([&](const std::string& f){
+                    return f+".eval("+textureHelper("gather")+"("+F+".xy, "+S+", "+corners[i]+"))."+c;});
+                return s+")";
+            }
+            noteLookup(e,u,quoted(e)+" samples the face child shader the direction selects, as GL selects the face"+level);
+            return faces([&](const std::string& f){return "float4("+f+".eval("+F+".xy))";});
+        }
+        // sampler3D and sampler2DArray: one child with the slices or layers stacked vertically.
+        const std::string child=elementName(u,element);
+        const bool layers=k=="sampler2DArray";
+        if(fetch) {
+            noteLookup(e,u,"texelFetch reads the texel at its centre in the stacked child shader"+level);
+            return "float4("+child+".eval("+textureHelper("atlas")+"(float3("+P+(off.empty()?"":layers?" + int3("+off+", 0)":" + "+off)+"), "+S+")))";
+        }
+        if(gather) {
+            const std::string texel=textureHelper("texelLayer_"+u->wrap);
+            return gatherText(e,lane,"("+P+").xy",S+".xy",off,[&](const std::string& c){return child+".eval("+c+")";},u,
+                [&](const std::string& base){return texel+"("+base+", ("+P+").z, "+S+")";});
+        }
+        noteLookup(e,u,quoted(e)+" reads texel centres of the child shader "+quoted(child)+" and filters ("+(u->nearest?"nearest":"linear")+") and wraps ("+u->wrap+
+            ") them in the shader"+level);
+        if(layers) {
+            const std::string texel=textureHelper("texelLayer_"+u->wrap), uv="("+P+").xy", layer="("+P+").z", o2=off.empty()?"":" + float2("+off+")";
+            if(u->nearest)return "float4("+child+".eval("+texel+"(floor("+uv+" * "+S+".xy)"+o2+", "+layer+", "+S+")))";
+            const std::string q=once("float2",uv+" * "+S+".xy - 0.5");
+            std::string s=textureHelper("bilinear")+"(";
+            for(const char* d:{"0.0, 0.0","1.0, 0.0","0.0, 1.0","1.0, 1.0"})s+="float4("+child+".eval("+texel+"(floor("+q+")"+o2+" + float2("+d+"), "+layer+", "+S+"))), ";
+            return s+"fract("+q+"))";
+        }
+        const std::string p3=proj?textureHelper("proj3D")+"("+P+")":P, texel=textureHelper("texel3D_"+u->wrap), o3=off.empty()?"":" + float3("+off+")";
+        if(u->nearest)return "float4("+child+".eval("+texel+"(floor("+p3+" * "+S+")"+o3+", "+S+")))";
+        const std::string q=once("float3",p3+" * "+S+" - 0.5");
+        std::string s=textureHelper("trilinear")+"(";
+        for(const char* d:{"0.0, 0.0, 0.0","1.0, 0.0, 0.0","0.0, 1.0, 0.0","1.0, 1.0, 0.0","0.0, 0.0, 1.0","1.0, 0.0, 1.0","0.0, 1.0, 1.0","1.0, 1.0, 1.0"})
+            s+="float4("+child+".eval("+texel+"(floor("+q+")"+o3+" + float3("+d+"), "+S+"))), ";
+        return s+"fract("+q+"))";
+    }
+    static int component(const Expr& e) {
+        const std::string& n=e.function->name;
+        const std::size_t at=n=="textureGather"?2:3;
+        if(at<e.operands.size() && e.operands[at]->value)return std::clamp(e.operands[at]->value->values[0].i,0,3);
+        return 0;
+    }
+    // textureGather: component c of the four texels of the footprint of linear filtering, in the
+    // order (i0, j1), (i1, j1), (i1, j0), (i0, j0).
+    std::string gatherText(const Expr& e, int lane, const std::string& uv, const std::string& S, const std::string& off,
+        const std::function<std::string(const std::string&)>& sample, const Symbol* u,
+        const std::function<std::string(const std::string&)>& texel={}) {
+        noteLookup(e,u,"textureGather reads the four texels of the footprint at their centres");
+        const bool offsets=e.function->name=="textureGatherOffsets";
+        const char c=kComponents[component(e)];
+        static const char* const corners[4]={"float2(0.0, 1.0)","float2(1.0, 1.0)","float2(1.0, 0.0)","float2(0.0, 0.0)"};
+        std::string s="float4(";
+        for(int i=0;i<4;++i) {
+            std::string corner=corners[i];
+            if(offsets)corner+=" + float2("+expr(*e.operands[2],lane,16)+"["+std::to_string(i)+"])";
+            else if(!off.empty())corner+=" + float2("+off+")";
+            const std::string at=texel?texel("floor("+uv+" * "+S+" - 0.5) + "+corner):textureHelper("gather")+"("+uv+", "+S+", "+corner+")";
+            s+=std::string(i?", ":"")+sample(at)+"."+c;
+        }
+        return s+")";
+    }
+    void noteLookup(const Expr& e, const Symbol* u, const std::string& message) {
+        replaced(e,"texture",message,sizedSamplers.count(u)?"set the size uniform of "+quoted(u->name)+" (see its declaration)":"no change needed",
+            ".eval(");
     }
     GLSL_SKSL_NOINLINE void field(std::string& o, const Expr& e, int lane) {
         const Expr& base=*e.operands[0];
         const Symbol* s=base.kind==ExprKind::Name?base.symbol:nullptr;
         if(s && s->storage==Storage::Uniform && s->type.base==Type::Struct && s->type.structDef && s->type.structDef->block && !s->type.isArray()) {
             o+=e.text;   // member of a flattened uniform block
+            return;
+        }
+        if(isBuiltin(base,"gl_DepthRange")) {
+            builtinVariable(base);
+            o+=e.text=="near"?"0.0":"1.0";
             return;
         }
         expr(o,base,lane,16);
@@ -732,14 +1413,39 @@ private:
     }
     bool needsPrelude(const Expr& e, int lane) const {
         if(hoisted.count(&e) || computed(e,lane) || foldsToConstant(e) || e.kind==ExprKind::Method)return false;
-        if(unexpressible(e))return true;
-        for(const auto& o:e.operands)if(needsPrelude(*o,lane))return true;
+        if(unexpressible(e)||complexLookup(e))return true;
+        for(std::size_t i=0;i<e.operands.size();++i)if(spilledOperand(e,i,lane)||needsPrelude(*e.operands[i],lane))return true;
         return false;
+    }
+    // A vector or scalar constructor reads a matrix argument element by element; one with side
+    // effects is computed once, into a temporary, before the statement.
+    bool spilledOperand(const Expr& e, std::size_t i, int lane) const {
+        const Expr& a=*e.operands[i];
+        // Texture lookups repeat their operands (or leave out the level of detail and gradients).
+        if(isTextureCall(e) && i>0)return !hoisted.count(&a) && !computed(a,lane) && sideEffects(a);
+        // A selection among copies of a function for an array of samplers repeats the arguments.
+        if(dynamicSamplerCall(e) && i<e.function->params.size() && e.function->params[i].direction==Direction::In && !samplerType(a.type))
+            return !hoisted.count(&a) && !computed(a,lane) && sideEffects(a);
+        return e.kind==ExprKind::Constructor && e.type.isBasic() && !e.type.isMatrix() && a.type.isMatrix()
+            && !hoisted.count(&a) && !computed(a,lane) && sideEffects(a);
     }
 
     // Emits, before the statement being written, what SkSL cannot compute inside `e`.
     void prepare(const Expr& e, int lane) {
         if(!needsPrelude(e,lane))return;
+        if(complexLookup(e)) {
+            // Its parts are computed once, before the statement (without a prelude, as in a for
+            // loop header, the lookup repeats them).
+            prepareOperands(e,lane);
+            lookupPrelude=true;
+            std::string s;
+            textureLookup(s,e,lane);
+            lookupPrelude=false;
+            const std::string t=temp();
+            line(typeName(e.type)+" "+t+" = "+s+";");
+            compute(e,lane,t);
+            return;
+        }
         switch(e.kind) {
         case ExprKind::Binary:
             if(e.text=="&&"||e.text=="||"){shortCircuit(e,lane);return;}
@@ -774,10 +1480,11 @@ private:
     // the statement is computed first itself when the order could change a result.
     void prepareOperands(const Expr& e, int lane) {
         std::size_t last=e.operands.size();
-        for(std::size_t i=0;i<e.operands.size();++i)if(needsPrelude(*e.operands[i],lane))last=i;
+        for(std::size_t i=0;i<e.operands.size();++i)if(needsPrelude(*e.operands[i],lane)||spilledOperand(e,i,lane))last=i;
         if(last==e.operands.size())return;
         for(std::size_t i=0;i<last;++i) {
             const Expr& o=*e.operands[i];
+            if(spilledOperand(e,i,lane)){spill(o,lane);continue;}
             Access before, after;
             access(o,before,nullptr,false);
             for(std::size_t j=i+1;j<=last;++j)access(*e.operands[j],after,nullptr,false);
@@ -789,7 +1496,8 @@ private:
                     "compute the later part in a separate statement before this one");
             else spill(o,lane);
         }
-        prepare(*e.operands[last],lane);
+        if(spilledOperand(e,last,lane))spill(*e.operands[last],lane);
+        else prepare(*e.operands[last],lane);
     }
     void spill(const Expr& o, int lane) {
         prepare(o,lane);
@@ -878,7 +1586,7 @@ private:
             // The result is the function's last, out parameter.
             const std::size_t m=mark();
             prepareOperands(value,lane);
-            std::string call=functionName(value.function,lane);
+            std::string call=functionName(value.function,lane,calleeSpec(value));
             arguments(call,value,0,lane);
             call.insert(call.size()-1,(value.operands.empty()?"":", ")+target);
             line(call+";");
@@ -946,7 +1654,8 @@ private:
         }
         const std::size_t m=mark();
         prepare(e,lane);
-        if(!computed(e,lane))line(expr(e,lane)+";");   // otherwise the prelude was the statement
+        if(dynamicSamplerCall(e) && e.function->returnType.base==Type::Void)dynamicCallStatement(e,lane,samplerArgs(e));
+        else if(!computed(e,lane))line(expr(e,lane)+";");   // otherwise the prelude was the statement
         release(m);
     }
 
@@ -965,6 +1674,7 @@ private:
     bool rewritingReturns(int lane) const {return lane>0 && tailLane==lane;}
 
     void stmt(const Stmt& s, int lane) {
+        const From from(*this,s.loc,lastLine(s));
         switch(s.kind) {
         case StmtKind::Block:
             line("{");
@@ -978,11 +1688,109 @@ private:
         case StmtKind::If: ifStatement(s,lane); break;
         case StmtKind::Switch: switchStatement(s,lane,false); break;
         case StmtKind::For: forStatement(s,lane,false); break;
+        // Refused loops are still written, so the SkSL returned with the error shows what SkSL rejects.
+        case StmtKind::While:
+            line("while ("+(s.expr?expr(*s.expr,lane):std::string())+") {");
+            ++indent; contents(*s.loop,lane); --indent;
+            line("}");
+            break;
+        case StmtKind::DoWhile:
+            line("do {");
+            ++indent; contents(*s.loop,lane); --indent;
+            line("} while ("+expr(*s.expr,lane)+");");
+            break;
         case StmtKind::Return: returnStatement(s,lane); break;
         case StmtKind::Break: line("break;"); break;
         case StmtKind::Continue: line("continue;"); break;
-        default: break;   // empty statements; while, do-while and discard are refused by the semantic pass
+        case StmtKind::Discard: discardStatement(s,lane); break;
+        default: break;   // empty statements
         }
+    }
+    static bool isBuiltin(const Expr& e, const char* name) {
+        return e.kind==ExprKind::Name && e.symbol && e.symbol->storage==Storage::BuiltIn && e.symbol->name==name;
+    }
+    // Built-in variables SkSL lacks, with the warning for their replacement (once per variable).
+    void builtinVariable(const Expr& e) {
+        const Symbol* s=e.symbol;
+        if(!s || !notedBuiltins.insert(s).second)return;
+        const std::string& n=s->name;
+        if(n=="gl_FragData")
+            sink.warning(e.loc,"software.output","gl_FragData[0] is the color the SkSL main returns: GLSL ES 1.00 has gl_MaxDrawBuffers = 1, and SkSL runtime "
+                "shaders return a single color","no change needed");
+        else if(n=="gl_FrontFacing")
+            sink.warning(e.loc,"software.front-facing","gl_FrontFacing is true: Skia draws have no back faces, so the shader runs as for a front-facing primitive",
+                "no change needed when the GL draw was front-facing; otherwise replace gl_FrontFacing by false");
+        else if(n=="gl_PointCoord")
+            sink.warning(e.loc,"software.point-coord","gl_PointCoord is computed as if the drawn area were the point sprite: x from 0 to 1 left to right, y from 0 at the "
+                "top to 1 at the bottom of the GL window, from the coordinate and "+quoted(resolution),
+                "set "+quoted(resolution.substr(0,resolution.find('.')))+" to the width and height of the drawn area, and draw with the y flip that gl_FragCoord needs (see README)");
+        else if(n=="gl_DepthRange")
+            sink.warning(e.loc,"software.depth-range","gl_DepthRange has its default values near = 0, far = 1, diff = 1: SkSL runtime shaders have no depth range",
+                "no change needed when the GL application keeps the default glDepthRangef(0, 1)");
+        else if(s->value)
+            sink.warning(e.loc,"software.constant",n+" is "+std::to_string(s->value->values[0].i)+", the minimum the GLSL ES specification allows: the "
+                "value of the original device is not known","no change needed unless the shader relies on a larger device limit");
+        else return;
+        sink.hint(n=="gl_FragData"?colorName:n=="gl_PointCoord"?resolution.substr(0,resolution.find('.')):n=="gl_FrontFacing"?"true":std::string());
+    }
+    std::set<const Symbol*> notedBuiltins;
+    // SkSL runtime shaders cannot discard. Returning transparent black leaves the destination as it
+    // is under source-over blending, as discard does. Only the pixel's own lane ends: a discarded
+    // neighbour of the quad keeps running for derivatives, like a GPU helper invocation. Outside
+    // main, a flag records the discard and the rest runs without effect on the result.
+    void discardStatement(const Stmt& s, int lane) {
+        if(lane!=0)return;
+        const std::string text=current==program.main?"return half4(0.0);":discardedName+" = true;";
+        if(notedDiscards.insert(&s).second) {
+            sink.warning(s.loc,"software.discard","discard: SkSL runtime shaders cannot discard pixels, so the shader returns transparent black (0, 0, 0, 0) "
+                "instead, which leaves the destination unchanged under source-over blending (Skia's default), as discard does",
+                "draw with source-over blending (SkBlendMode::kSrcOver); with other blend modes the pixel is not left unchanged");
+            sink.hint(text);
+        }
+        line(text);
+    }
+    std::set<const Stmt*> notedDiscards;
+    static bool discards(const Stmt& s) {
+        if(s.kind==StmtKind::Discard)return true;
+        for(const auto& x:s.body)if(discards(*x))return true;
+        for(const Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x && discards(*x))return true;
+        return false;
+    }
+    // Whether every path through s ends in a return (or a discard, when `discardEnds`).
+    static bool terminates(const Stmt& s, bool discardEnds) {
+        switch(s.kind) {
+        case StmtKind::Return: return true;
+        case StmtKind::Discard: return discardEnds;
+        case StmtKind::Block: for(const auto& x:s.body)if(terminates(*x,discardEnds))return true; return false;
+        case StmtKind::If: return s.otherwise && terminates(*s.then,discardEnds) && terminates(*s.otherwise,discardEnds);
+        default: return false;
+        }
+    }
+    std::string mainReturn() const {
+        if(discardedName.empty())return "return half4("+colorName+");";
+        return "return "+discardedName+" ? half4(0.0) : half4("+colorName+");";
+    }
+    // GLSL leaves the value of a function that reaches its end undefined, and a function that
+    // discards outside main continues past the discard; SkSL needs a return, so zero is returned.
+    void fallOffReturn(const sema::Function& f) {
+        if(f.returnType.base==Type::Void || returnsAggregate(f) || terminates(*f.definition->body,false))return;
+        const std::string text="return "+zeroValue(f.returnType)+";";
+        if(!terminates(*f.definition->body,true) && notedFallOffs.insert(&f).second) {
+            sink.warning(f.definition->loc,"software.missing-return","function "+quotedName(f)+" can reach its end without returning a value, which GLSL leaves "
+                "undefined and SkSL rejects; it returns zero there","add a return statement at the end of "+quotedName(f));
+            sink.hint(text);
+        }
+        line(text);
+    }
+    std::set<const sema::Function*> notedFallOffs;
+    std::string zeroValue(const Type& t) const {
+        if(t.base==Type::Struct && t.structDef) {
+            std::string s=typeName(t)+"(";
+            for(std::size_t i=0;i<t.structDef->fields.size();++i)s+=(i?", ":"")+zeroValue(t.structDef->fields[i].type);
+            return s+")";
+        }
+        const char* zero=t.base==Type::Bool?"false":t.base==Type::Float?"0.0":"0";
+        return t.isScalar()?zero:typeName(t)+"("+zero+")";
     }
     void block(const std::vector<ast::StmtPtr>& list, std::size_t first, int lane) {
         int guards=0;
@@ -1036,9 +1844,18 @@ private:
     }
     void forStatement(const Stmt& s, int lane, bool synced) {
         std::string h="for (";
-        if(s.init && s.init->kind==StmtKind::Declaration && s.init->decl->declarators.size()==1 && s.init->decl->declarators[0].symbol)
-            h+=declarator(s.init->decl->declarators[0],lane);
-        else if(s.init && s.init->expr)expr(h,*s.init->expr,lane,0);
+        if(s.init && s.init->kind==StmtKind::Declaration) {
+            // Several declarators (refused by the semantic pass) share the type of the first.
+            const auto& list=s.init->decl->declarators;
+            for(std::size_t i=0;i<list.size();++i) {
+                if(!list[i].symbol)continue;
+                if(i==0)h+=declarator(list[i],lane);
+                else {
+                    h+=", "+symbolName(list[i].symbol,lane);
+                    if(list[i].init){h+=" = ";expr(h,*list[i].init,lane,2);}
+                }
+            }
+        } else if(s.init && s.init->expr)expr(h,*s.init->expr,lane,0);
         h+="; ";
         if(s.expr)expr(h,*s.expr,lane,0);
         h+="; ";
@@ -1052,7 +1869,7 @@ private:
         line("}");
     }
     void returnStatement(const Stmt& s, int lane) {
-        if(current==program.main){line("return half4("+colorName+");");return;}
+        if(current==program.main){line(mainReturn());return;}
         if(s.expr && returnsAggregate(*current)) {
             assignParts(resultName,current->returnType,*s.expr,lane);
             line("return;");
@@ -1071,6 +1888,7 @@ private:
     // Statements that compute derivatives run for the four pixels of the quad in lockstep; the rest
     // runs once per lane.
     void sync(const Stmt& s) {
+        const From from(*this,s.loc,lastLine(s));
         const StmtInfo i=info(s);
         if(!i.sync && !i.returns && !i.jumps) {
             for(int lane=0;lane<4;++lane)stmt(s,lane);
@@ -1227,6 +2045,10 @@ private:
         };
         const std::string& name=e.function->name;
         const std::string result=temp();
+        replaced(e,"derivative",quoted(e)+" is computed in software: SkSL runtime shaders have no derivatives, so the code that leads to it "
+            "is also evaluated for the other three pixels of the 2x2 quad, and the difference is taken the way GPUs compute fine derivatives",
+            "no change needed; the code before the last derivative runs up to four times per pixel, so an analytic derivative is faster where one is known",
+            " "+result+" = ");
         if(name=="dFdx")dx(result);
         else if(name=="dFdy")dy(result);
         else {
@@ -1242,12 +2064,12 @@ private:
         for(int lane=0;lane<4;++lane)for(const auto& o:e.operands)prepare(*o,lane);
         std::string args;
         for(std::size_t i=0;i<e.operands.size();++i)
-            for(int lane=0;lane<4;++lane) {
+            for(int lane=0;lane<4 && !samplerType(e.operands[i]->type);++lane) {
                 if(!args.empty())args+=", ";
                 expr(args,*e.operands[i],lane,2);
             }
         release(m);
-        const std::string name=functionName(&f,0);
+        const std::string name=functionName(&f,0,calleeSpec(e));
         if(f.returnType.base==Type::Void) {
             line(name+"("+args+");");
             hoisted[&e]="";
@@ -1332,6 +2154,18 @@ private:
         mainPrologue();
     }
     void function(const sema::Function& f) {
+        if(!samplerParams(f)){definition(f);return;}
+        const auto it=specs.find(&f);
+        if(it==specs.end())return;
+        for(const Spec& spec:it->second) {
+            currentSpec=&spec;
+            hoisted.clear();
+            definition(f);
+        }
+        currentSpec=nullptr;
+    }
+    void definition(const sema::Function& f) {
+        const From from(*this,f.definition?f.definition->loc:f.loc,f.definition && f.definition->body?lastLine(*f.definition->body):f.loc.line);
         current=&f;
         shared.clear();
         if(quad(&f)) {
@@ -1341,20 +2175,26 @@ private:
         if(&f==program.main) {
             mainSignature();
             block(f.definition->body->body,0,0);
-            line("return half4("+colorName+");");
+            line(mainReturn());
             --indent;
             line("}");
             return;
         }
         const int copies=laneFunction(&f)?4:1;
         for(int lane=0;lane<copies;++lane) {
-            std::string signature=(returnsAggregate(f)?"void":typeName(f.returnType))+" "+functionName(&f,lane)+"(";
-            for(std::size_t i=0;i<f.params.size();++i)signature+=(i?", ":"")+parameter(f,i,lane);
-            if(returnsAggregate(f))signature+=(f.params.empty()?"out ":", out ")+declaration(f.returnType,resultName);
+            std::string signature=(returnsAggregate(f)?"void":typeName(f.returnType))+" "+functionName(&f,lane,currentSpec)+"(";
+            bool first=true;
+            for(std::size_t i=0;i<f.params.size();++i) {
+                if(samplerType(f.params[i].type))continue;
+                signature+=(first?"":", ")+parameter(f,i,lane);
+                first=false;
+            }
+            if(returnsAggregate(f))signature+=(first?"out ":", out ")+declaration(f.returnType,resultName);
             line(signature+") {");
             ++indent;
             unwrittenOutputs(f,lane);
             block(f.definition->body->body,0,lane);
+            fallOffReturn(f);
             --indent;
             line("}");
         }
@@ -1384,13 +2224,15 @@ private:
         else {
             std::string params;
             for(std::size_t i=0;i<f.params.size();++i)
-                for(int lane=0;lane<4;++lane)params+=(params.empty()?"":", ")+parameter(f,i,lane);
+                for(int lane=0;lane<4 && !samplerType(f.params[i].type);++lane)params+=(params.empty()?"":", ")+parameter(f,i,lane);
             if(f.returnType.base!=Type::Void)
                 for(int lane=1;lane<4;++lane)params+=std::string(params.empty()?"":", ")+"out "+typeName(f.returnType)+" "+laneName(retName,lane);
-            line(typeName(f.returnType)+" "+functionName(&f,0)+"("+params+") {");
+            line(typeName(f.returnType)+" "+functionName(&f,0,currentSpec)+"("+params+") {");
             ++indent;
         }
         for(int lane=0;lane<4;++lane)unwrittenOutputs(f,lane);
+        if(!isMain && f.returnType.base!=Type::Void && !terminates(*f.definition->body,false))
+            for(int lane=1;lane<4;++lane)line(laneName(retName,lane)+" = "+zeroValue(f.returnType)+";");
         const auto& body=f.definition->body->body;
         std::size_t last=0;
         for(std::size_t i=0;i<body.size();++i)if(info(*body[i]).sync)last=i;
@@ -1414,7 +2256,8 @@ private:
             }
         }
         if(tail<body.size())block(body,tail,0);
-        if(isMain)line("return half4("+colorName+");");
+        if(isMain)line(mainReturn());
+        else fallOffReturn(f);
         --indent;
         line("}");
     }
@@ -1432,7 +2275,7 @@ private:
         std::set<std::string> used;
         for(const auto& def:program.structs) {
             if(def.block)continue;
-            std::string name=def.name.empty()?fresh("S"):userName(def.name);
+            std::string name=def.name.empty()?fresh("S"):def.name.compare(0,3,"gl_")==0?fresh(def.name.substr(3)):userName(def.name);
             if(used.count(name))name=fresh(name);   // structs of the same name in different scopes
             used.insert(name);
             structNames[&def]=name;
@@ -1441,6 +2284,7 @@ private:
     void structDefinitions() {
         for(const auto& def:program.structs) {
             if(def.block)continue;
+            const From from(*this,def.loc,def.fields.empty()?def.loc.line:def.fields.back().loc.line);
             line("struct "+structNames[&def]+" {");
             ++indent;
             for(const auto& f:def.fields)line(typeName(f.type)+" "+userName(f.name)+dims(f.type)+";");
@@ -1450,9 +2294,15 @@ private:
     }
     void generatedGlobals() {
         const int copies=lanes?4:1;
-        for(int lane=0;lane<copies;++lane)line("float4 "+laneName(colorName,lane)+";");
+        {
+            // The color global stands for the shader's output declaration.
+            const Symbol* output=program.outputs.empty()?nullptr:program.outputs[0];
+            const From from(*this,output?declarationStart(output):Loc{},output?output->loc.line:0);
+            for(int lane=0;lane<copies;++lane)line("float4 "+laneName(colorName,lane)+";");
+        }
         if(usesFragCoord||lanes)for(int lane=0;lane<copies;++lane)line("float4 "+laneName(fragCoordName,lane)+";");
         if(lanes)line("float2 "+quadName+";");
+        if(!discardedName.empty())line("bool "+discardedName+";");
     }
     void uniformName(const std::string& name, Loc at) {
         if(userName(name)!=name)
@@ -1485,9 +2335,16 @@ private:
                 for(const auto& v:d->declarators) {
                     const Symbol* s=v.symbol;
                     if(!s)continue;
+                    const From from(*this,d->loc,v.init?std::max(v.loc.line,lastLine(*v.init)):v.loc.line);
                     if(s->storage==Storage::Uniform) {
                         uniformName(s->name,s->loc);
-                        line("uniform "+typeName(s->type)+" "+s->name+dims(s->type)+";");
+                        if(samplerType(s->type))samplerDeclarations(*s);
+                        else line("uniform "+typeName(s->type)+" "+s->name+dims(s->type)+";"+(s->annotation.empty()?"":"  // "+s->annotation));
+                    } else if(s->storage==Storage::Input) {
+                        // The texture coordinate is computed at the start of main; other inputs
+                        // are refused, and keep a declaration so the SkSL shows them.
+                        if(s->textureCoordinate)textureCoordinate=s;
+                        for(int lane=0;lane<(lanes?4:1);++lane)line(declaration(s->type,symbolName(s,lane))+";");
                     } else if(s->storage==Storage::Global && v.init && aggregate(s->type)) {
                         for(int lane=0;lane<globalCopies(*s);++lane)line(declaration(s->type,symbolName(s,lane))+";");
                         globalArrays.push_back(&v);
@@ -1499,11 +2356,54 @@ private:
                 for(const auto& def:program.structs) {
                     if(!def.block || def.name!=d->block->name || def.loc.line!=d->block->loc.line || def.loc.column!=d->block->loc.column)continue;
                     for(const auto& f:def.fields) {
+                        const From from(*this,f.loc,f.loc.line);
                         uniformName(f.name,f.loc);
                         line("uniform "+typeName(f.type)+" "+f.name+dims(f.type)+";");
                     }
                 }
             }
+        }
+        if(textureCoordinate)textureCoordinateDeclarations(*textureCoordinate);
+        else if(usesPointCoord)resolutionUniform();
+    }
+    // The texture coordinate input holds UV from 0 to 1 across the drawn area: the coordinate of
+    // main divided by the iResolution uniform, which the shader declares or the SkSL adds.
+    const Symbol* textureCoordinate=nullptr;
+    std::string resolution;
+    // The size of the drawn area: the shader's iResolution uniform, or one the SkSL declares.
+    // Returns a note for the warning when the SkSL declares it.
+    std::string resolutionUniform() {
+        if(!resolution.empty())return resolutionNote;
+        for(const Symbol* u:program.uniforms)
+            if(u->name=="iResolution" && u->type.base==Type::Float && u->type.isVector() && !u->type.isArray())
+                resolution=u->type.rows==2?u->name:u->name+".xy";
+        if(resolution.empty()) {
+            // The target application declares iResolution as a vec2.
+            const std::string name=fresh("iResolution");
+            line("uniform float2 "+name+";");
+            resolution=name;
+            resolutionNote=" (declared by the SkSL, since the shader has no iResolution uniform)";
+        }
+        return resolutionNote;
+    }
+    std::string resolutionNote;
+    void textureCoordinateDeclarations(const Symbol& s) {
+        const From from(*this,declarationStart(&s),s.loc.line);
+        const std::string declared=resolutionUniform();
+        const int rows=s.type.rows;
+        const std::string resolutionUniform=resolution.substr(0,resolution.find('.'));
+        sink.warning(s.loc,"software.input","input "+quoted(s.name)+" is the texture coordinate: SkSL runtime shaders have no inputs, so it is computed as "
+            "the coordinate of the pixel divided by "+quoted(resolution)+declared+", which gives UV from 0 to 1 across the drawn area"+
+            (rows>2?std::string(", with z = 0")+(rows>3?" and w = 1":""):std::string()),
+            "set the uniform "+quoted(resolutionUniform)+" to the width and height of the drawn area");
+        sink.hint(symbolName(&s,0)+" = ");
+    }
+    void textureCoordinatePrologue(const Symbol& s) {
+        const From from(*this,declarationStart(&s),s.loc.line);
+        for(int lane=0;lane<(lanes?4:1);++lane) {
+            const std::string uv=(lane?laneName(fragCoordName,lane)+".xy":coordName)+" / "+resolution;
+            const int rows=s.type.rows;
+            line(symbolName(&s,lane)+" = "+(rows==2?uv:rows==3?"float3("+uv+", 0.0)":"float4("+uv+", 0.0, 1.0)")+";");
         }
     }
     void mainPrologue() {
@@ -1518,7 +2418,9 @@ private:
                 line(laneName(fragCoordName,3)+" = float4("+c+" + "+q+", 0.0, 1.0);");
             }
         }
+        if(textureCoordinate)textureCoordinatePrologue(*textureCoordinate);
         for(int lane=0;lane<(lanes?4:1);++lane)line(laneName(colorName,lane)+" = float4(0);");
+        if(!discardedName.empty())line(discardedName+" = false;");
         // SkSL global arrays cannot have initializers (const ones become plain variables).
         for(const ast::Declarator* v:globalArrays)
             for(int lane=0;lane<globalCopies(*v->symbol);++lane)
@@ -1527,7 +2429,8 @@ private:
 };
 }
 
-std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink) {
-    return Emitter(unit,program,tokens,sink).run();
+std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
+    std::vector<SourceSpan>& origins) {
+    return Emitter(unit,program,tokens,sink).run(origins);
 }
 }

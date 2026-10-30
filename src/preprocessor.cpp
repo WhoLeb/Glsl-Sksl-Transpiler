@@ -207,8 +207,9 @@ private:
         };
         define("__LINE__",-1); define("__FILE__",-1);
         define("__VERSION__",out.version); define("GL_ES",1); define("GL_FRAGMENT_PRECISION_HIGH",1);
-        // Derivatives are emulated (see emitter.cpp), so the GLSL ES 1.00 extension that provides them is available.
-        if(out.version==100)define("GL_OES_standard_derivatives",1);
+        // Derivatives are emulated (see emitter.cpp) and texture lookups with a level of detail or
+        // gradients sample the base level, so the GLSL ES 1.00 extensions that provide them are available.
+        if(out.version==100){define("GL_OES_standard_derivatives",1);define("GL_EXT_shader_texture_lod",1);}
     }
 
     bool checkName(const Token& name, const std::string& directive) {
@@ -382,7 +383,7 @@ private:
             else sink.warning(t[2].loc,"pp.extension","unknown extension '"+name+"'; the directive has no effect","check the extension name");
             return;
         }
-        if(name=="GL_OES_standard_derivatives" && out.version==100)return;
+        if((name=="GL_OES_standard_derivatives"||name=="GL_EXT_shader_texture_lod") && out.version==100)return;
         if(behavior=="require")
             sink.error(t[2].loc,"pp.extension","Unsupported extension '"+name+"': it is not available in SkSL runtime shaders","remove the dependency on the extension");
         else sink.warning(t[2].loc,"pp.extension","extension '"+name+"' is not available in SkSL runtime shaders; it stays disabled",

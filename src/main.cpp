@@ -19,8 +19,10 @@ int main(int argc,char** argv) {
     if(in->bad()){std::cerr<<"Cannot read input\n";return 2;}
     auto result=glsl_sksl::transpile(source);
     for(const auto& d:result.diagnostics)std::cerr<<glsl_sksl::formatDiagnostic(d);
-    if(!result.ok())return 1;
-    if(argc==3){std::ofstream out(argv[2]);out<<result.source;if(!out){std::cerr<<"Cannot write output\n";return 2;}}
-    else {std::cout<<result.source;if(!std::cout)return 2;}
-    return 0;
+    // Unsupported constructs still produce SkSL (which Skia rejects); invalid GLSL produces none.
+    if(!result.source.empty()) {
+        if(argc==3){std::ofstream out(argv[2]);out<<result.source;if(!out){std::cerr<<"Cannot write output\n";return 2;}}
+        else {std::cout<<result.source;if(!std::cout)return 2;}
+    }
+    return result.ok()?0:1;
 }

@@ -23,6 +23,21 @@ struct Symbol {
     ConstantPtr value;                    // folded value of a constant expression, when computable
     std::string unsupported;              // built-ins that SkSL cannot provide
     int location=-1;                      // layout(location=N)
+    // Uniforms: '// @minmax{a, b} @init{v}' comment on the declaration's line or the line before.
+    // The range lets loops bounded by the uniform run over a constant range (see loopIssues).
+    std::string annotation;               // the annotation as written, repeated in the SkSL
+    bool hasRange=false, hasInit=false;
+    double minimum=0, maximum=0, initial=0;
+    // Inputs: the texture coordinate input (the one at location 0, or the only input), which holds
+    // UV coordinates from 0 to 1 across the drawn area. The SkSL computes it from the coordinate
+    // parameter of main divided by the iResolution uniform (see the emitter).
+    bool textureCoordinate=false;
+    // Locals the transpiler introduces (the counter of a rewritten loop); the emitter names them.
+    bool generated=false;
+    // Samplers filtered in software (sampler3D, sampler2DArray): '// @filter{nearest|linear}
+    // @wrap{repeat|clamp|mirror}' gives the GL sampler state, linear and repeat by default.
+    bool nearest=false;
+    std::string wrap="repeat";
 };
 
 struct Param { Type type; Direction direction=Direction::In; bool constQualified=false; std::string name; };
@@ -31,6 +46,7 @@ struct Function {
     Loc loc;
     bool builtin=false;
     int version=100;                      // built-ins: first GLSL ES version that has it
+    int lastVersion=320;                  // built-ins: last GLSL ES version that has it
     std::string unsupported;              // built-ins without a faithful SkSL equivalent
     const ast::Function* definition=nullptr;
     const ast::Function* declaration=nullptr;   // first prototype or the definition
