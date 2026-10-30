@@ -73,5 +73,6 @@ bool isUnsupportedBuiltinName(const std::string& name, int version);
 // dFdx, dFdy and fwidth, which the emitter computes from neighbouring pixels.
 bool isDerivative(const std::string& name);
 
-std::unique_ptr<Program> analyze(ast::TranslationUnit& unit, DiagnosticSink& sink);
+// `vec2Input`: the name of a vec3 or vec4 input to type as a vec2 instead (see transpile).
+std::unique_ptr<Program> analyze(ast::TranslationUnit& unit, DiagnosticSink& sink, const std::string& vec2Input={});
 }

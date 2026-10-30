@@ -781,6 +781,12 @@ def register(case, cases, root):
     R('es100_fragcolor_read_back', E1 + 'void main(){gl_FragColor=vec4(.5);gl_FragColor.rgb*=.5;gl_FragColor.a=1.;}\n')
     R('es100_fragcolor_in_helper', E1 + 'void shade(){gl_FragColor=vec4(.25);}\nvoid main(){shade();}\n')
     R('es100_fragcoord', E1 + 'uniform vec2 size;\nvoid main(){gl_FragColor=vec4(gl_FragCoord.xy/size,0.,1.);}\n')
+    # Texture-coordinate input declared vec4 but used as vec2: invalid as written, retried with a vec2 input.
+    UV_HEADER = '#version 310 es\nprecision highp float;\nlayout(location = 0) in highp vec4 uv_coords;\nuniform vec2 iResolution;\nout vec4 out_color;\n'
+    R('uv_vec4_used_as_vec2', UV_HEADER + 'void main(){ vec2 d = uv_coords * 2.0 - vec2(1.0); out_color = vec4(d, 0.0, 1.0); }\n',
+      valid=False, note='vec4 uv_coords used as vec2; accepted via the sema.input-vec2 retry')
+    R('uv_vec4_used_as_vec2_and_vec4_invalid', UV_HEADER + 'void main(){ vec2 d = uv_coords - vec2(0.5); out_color = uv_coords; }\n',
+      ok=False, valid=False, note='uses the vec4 input whole as well as a vec2; keeps the sema.operator error')
     R('es100_fragdata0', E1 + 'void main(){gl_FragData[0]=vec4(1.);}\n',
       note='gl_FragData[0] alone equals gl_FragColor: it becomes the returned color')
     R('es100_varying', E1 + 'varying vec2 uv;\nvoid main(){gl_FragColor=vec4(uv,0.,1.);}\n')
@@ -858,7 +864,11 @@ def register(case, cases, root):
     C('cf_for_increment_assign_form', 'void main(){float a=0.;for(int i=0;i<4;i=i+1)a+=.1;color=vec4(a);}', ok=False,
       note='i=i+1 is i+=1; refused today, could be normalized')
     C('cf_for_postfix_decrement', 'void main(){float a=0.;for(int i=3;i>=0;i--)a+=.1;color=vec4(a);}')
-    C('cf_for_compound_condition', 'void main(){float a=0.;for(int i=0;i<8&&a<u;++i)a+=.1;color=vec4(a);}', ok=False, decl='uniform float u;out vec4 color;')
+    C('cf_for_compound_condition', 'void main(){float a=0.;for(int i=0;i<8&&a<u;++i)a+=.1;color=vec4(a);}', decl='uniform float u;out vec4 color;')
+    C('cf_for_and_condition_index_first', 'void main(){float t=1.;float r=0.;for(int i=0;i<16&&t<2.;i++){r+=.1;t+=.05;}color=vec4(r);}')
+    C('cf_for_and_condition_index_second', 'void main(){float t=0.;for(int i=0;t<time&&i<16;i++){t+=.25;}color=vec4(t);}', decl=UNI)
+    C('cf_for_and_condition_side_effect_first', 'float g=0.;bool f(){g+=1.;return g<5.;}void main(){float s=0.;for(int i=0;f()&&i<16;i++){s+=1.;}color=vec4(s/10.,g/10.,0.,1.);}')
+    C('cf_while_and_condition', 'void main(){int i=0;float t=0.;while(t<time&&i<10){t+=.5;i++;}color=vec4(t/10.,float(i)/10.,0.,1.);}', decl=UNI)
     C('cf_for_cond_not_counter', 'void main(){float a=0.;for(int i=0;a<.35;++i)a+=.1;color=vec4(a);}', ok=False)
     C('cf_for_counter_passed_inout', 'void skip(inout int i){i+=1;} void main(){float a=0.;for(int i=0;i<8;++i){a+=.1;skip(i);}color=vec4(a);}', ok=False,
       note='index modified through an inout argument')
@@ -928,4 +938,33 @@ def register(case, cases, root):
     C('cf_discard_with_derivative', 'void main(){float d=dFdx(gl_FragCoord.x);if(d>0.)discard;color=vec4(d);}')
     C('bi_ldexp', 'void main(){color=vec4(ldexp(.5,2)/2.);}', ok=False)
     C('bi_bitfield_insert_reverse', 'void main(){color=vec4(float(bitfieldInsert(0,3,2,2)+bitfieldReverse(1))/16.);}', ok=False)
+    # Identifiers SkSL reserves or gives to intrinsics are renamed and listed in Result::renamedIdentifiers.
+    RH = '#version 300 es\r\nprecision highp float;\r\n'
+    R('rename_intrinsic_uniform_collision', RH + 'uniform float step; uniform float step_; out vec4 c; void main(){c=vec4(step+step_+abs(-1.));}')
+    R('rename_intrinsic_sampler', RH + 'uniform sampler2D step;out vec4 c;void main(){c=texture(step,vec2(.5));}')
+    R('rename_block_field', RH + 'uniform B { float step; } block;out vec4 c;void main(){c=vec4(block.step);}')
+    R('rename_reserved_uniform', RH + 'uniform float float2;out vec4 c;void main(){c=vec4(float2);}')
     C('bi_mat4_inverse_determinant', 'void main(){mat4 m=mat4(2.);m[3]=vec4(1.,2.,3.,1.);mat4 i=inverse(m);color=vec4(i[3].xyz/-2.,determinant(m)/16.);}')
+
+    # ------------------------------------------------------------------ T. limits of Skia's compiler (found in Shadertoy shaders)
+    U1 = 'uniform float u;out vec4 color;'
+    C('skia_const_helper_tanh', 'void main(){const float f=2./tanh(1.);color=vec4(f);}',
+      note='a generated helper call is not a constant expression in SkSL: the const initializer is folded')
+    C('skia_const_helper_int_max', 'void main(){const int a=5;const int b=max(a-2,0);color=vec4(float(b));}',
+      note='int max is a generated helper; folded in a const initializer')
+    C('skia_const_transpose', 'void main(){const float a=.5;const mat2 r=mat2(cos(a),sin(a),-sin(a),cos(a));const vec2 p=vec2(1.)*transpose(r);color=vec4(p,0.,1.);}',
+      note='transpose of a const matrix is folded')
+    C('skia_index_remainder', 'void main(){float v[3]=float[3](.1,.2,.3);float s=0.;for(int i=0;i<3;i++)s+=v[(i+1)%3];color=vec4(s);}',
+      note='a remainder in an index must stay an operator expression for Skia')
+    C('skia_long_sum_chain', 'void main(){color=vec4(' + '+'.join(['u'] * 60) + ');}', decl=U1,
+      note='Skia limits parse depth to 50; the left part of the chain moves into temporaries')
+    C('skia_nested_calls', 'void main(){color=vec4(' + 'min(' * 30 + 'u' + ',u)' * 30 + ');}', decl=U1,
+      note='each nested call costs two levels of Skia parse depth')
+    C('skia_else_if_chain', 'void main(){float c=0.;if(u==0.)c=1.;' + ''.join(f'else if(u=={k}.)c={k}.;' for k in range(1, 40)) + 'color=vec4(c);}', decl=U1,
+      note='else if stays flat instead of nesting a block per branch')
+    C('skia_struct_out_unassigned', 'struct L{float a;float b[2];};bool f(L i,out L o){return false;}void main(){L x=L(1.,float[2](2.,3.));bool b=f(x,x);color=vec4(b?1.:x.a);}',
+      note='Skia rejects an out parameter that is never assigned; structs with arrays are zeroed field by field')
+    C('skia_const_zero_division', 'void main(){const float a=1.;color=vec4((a-a)/(a-a),1./(a-a),0.,1.);}',
+      note='Skia rejects division by a constant zero; the divisor gets a run-time zero')
+    C('skia_loop_over_limit', 'void main(){float s=0.;for(int i=0;i<100000;i++){s+=u;if(s>1.)break;}color=vec4(s);}', decl=U1,
+      note='Skia allows fewer than 100000 iterations per loop: two nested loops')

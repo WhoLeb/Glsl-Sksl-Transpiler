@@ -78,8 +78,8 @@ struct Quals {
 
 class Analyzer {
 public:
-    Analyzer(ast::TranslationUnit& unit, DiagnosticSink& sink):unit(unit),sink(sink),program(std::make_unique<Program>()),version(unit.version),
-        derivativesExtension(unit.standardDerivatives), textureLodExtension(unit.shaderTextureLod) {
+    Analyzer(ast::TranslationUnit& unit, DiagnosticSink& sink, const std::string& vec2Input):unit(unit),sink(sink),program(std::make_unique<Program>()),
+        version(unit.version),derivativesExtension(unit.standardDerivatives), textureLodExtension(unit.shaderTextureLod), vec2Input(vec2Input) {
         program->version=version;
         push();
     }
@@ -102,6 +102,7 @@ private:
     std::unique_ptr<Program> program;
     int version;
     bool derivativesExtension, textureLodExtension;
+    std::string vec2Input;   // an input typed as a vec2 (its x and y), see analyze
     std::vector<std::unordered_map<std::string,Entry>> scopes;
     std::vector<std::map<std::string,std::string>> precisions;
     std::map<std::string,Symbol*> builtinSymbols;
@@ -484,6 +485,7 @@ private:
         Symbol& s=program->symbols.back();
         s.name=v.name; s.type=t; s.loc=v.loc; s.storage=storage;
         s.constQualified=q.constQualified; s.location=q.location;
+        if(storage==Storage::Input && v.name==vec2Input && t.base==Type::Float && t.isVector() && !t.isArray())s.type=Type::of(Type::Float,2);
         if(q.constQualified && v.init && v.init->constant && v.init->type==t) {
             s.constantExpression=true; s.value=v.init->value;
         }
@@ -1210,8 +1212,8 @@ private:
 
     ConstantPtr foldBuiltin(const Function& f, const ast::Expr& e) const {
         static const std::set<std::string> foldable={"abs","sign","min","max","clamp","floor","ceil","trunc"};
-        if(!foldable.count(f.name))return nullptr;
         for(const auto& a:e.operands)if(!a->value)return nullptr;
+        if(!foldable.count(f.name))return foldFloatBuiltin(f,e);
         const Type& t=f.returnType;
         auto arg=[&](std::size_t i,int k)->const Scalar&{const auto& v=e.operands[i]->value->values;return v.size()==1?v[0]:v[static_cast<std::size_t>(k)];};
         std::vector<Scalar> out;
@@ -1236,6 +1238,100 @@ private:
             out.push_back(r);
         }
         return makeConstant(t,std::move(out));
+    }
+    // Float built-ins with constant arguments, computed in double and rounded to float, as GLSL
+    // compilers fold them. SkSL needs the value where the GLSL is a constant expression (a const
+    // initializer) and the transpiler would otherwise call a generated function. Results that are
+    // not finite, which GLSL leaves undefined, are not folded.
+    ConstantPtr foldFloatBuiltin(const Function& f, const ast::Expr& e) const {
+        const std::string& n=f.name;
+        const Type& t=f.returnType;
+        if(t.base!=Type::Float || t.isArray())return nullptr;
+        std::vector<std::vector<double>> args;
+        for(const auto& a:e.operands) {
+            std::vector<double> v;
+            for(const Scalar& s:a->value->values) {
+                if(s.base==Type::Bool && n=="mix")v.push_back(s.b?1.0:0.0);
+                else if(s.base==Type::Float)v.push_back(s.f);
+                else return nullptr;
+            }
+            args.push_back(std::move(v));
+        }
+        auto at=[&](std::size_t i,int k){return args[i].size()==1?args[i][0]:args[i][static_cast<std::size_t>(k)];};
+        auto dot=[&](std::size_t i,std::size_t j){double s=0;for(std::size_t k=0;k<args[i].size();++k)s+=args[i][k]*args[j][k];return s;};
+        static const double pi=3.14159265358979323846;
+        static const std::map<std::string,double(*)(double)> unary={
+            {"radians",[](double x){return x*pi/180.0;}}, {"degrees",[](double x){return x*180.0/pi;}},
+            {"sin",[](double x){return std::sin(x);}}, {"cos",[](double x){return std::cos(x);}}, {"tan",[](double x){return std::tan(x);}},
+            {"asin",[](double x){return std::asin(x);}}, {"acos",[](double x){return std::acos(x);}},
+            {"sinh",[](double x){return std::sinh(x);}}, {"cosh",[](double x){return std::cosh(x);}}, {"tanh",[](double x){return std::tanh(x);}},
+            {"asinh",[](double x){return std::asinh(x);}}, {"acosh",[](double x){return std::acosh(x);}}, {"atanh",[](double x){return std::atanh(x);}},
+            {"exp",[](double x){return std::exp(x);}}, {"log",[](double x){return std::log(x);}},
+            {"exp2",[](double x){return std::exp2(x);}}, {"log2",[](double x){return std::log2(x);}},
+            {"sqrt",[](double x){return std::sqrt(x);}}, {"inversesqrt",[](double x){return 1.0/std::sqrt(x);}},
+            {"fract",[](double x){return x-std::floor(x);}},
+            // As the generated helpers: a .5 fraction rounds up, and to even for roundEven.
+            {"round",[](double x){const double f=std::floor(x);return x-f>=0.5?f+1.0:f;}},
+            {"roundEven",[](double x){const double f=std::floor(x),d=x-f;return d>0.5?f+1.0:d<0.5?f:std::fmod(f,2.0)==0.0?f:f+1.0;}},
+        };
+        std::vector<double> out;
+        const int count=t.components();
+        const auto u=unary.find(n);
+        if(u!=unary.end() && args.size()==1)for(int k=0;k<count;++k)out.push_back(u->second(at(0,k)));
+        else if(n=="atan" && args.size()==1)for(int k=0;k<count;++k)out.push_back(std::atan(at(0,k)));
+        else if(n=="atan")for(int k=0;k<count;++k)out.push_back(std::atan2(at(0,k),at(1,k)));
+        else if(n=="pow")for(int k=0;k<count;++k)out.push_back(std::pow(at(0,k),at(1,k)));
+        else if(n=="mod")for(int k=0;k<count;++k)out.push_back(at(0,k)-at(1,k)*std::floor(at(0,k)/at(1,k)));
+        else if(n=="step")for(int k=0;k<count;++k)out.push_back(at(1,k)<at(0,k)?0.0:1.0);
+        else if(n=="fma")for(int k=0;k<count;++k)out.push_back(at(0,k)*at(1,k)+at(2,k));
+        else if(n=="mix" && e.operands[2]->type.base==Type::Bool)for(int k=0;k<count;++k)out.push_back(at(2,k)!=0.0?at(1,k):at(0,k));
+        else if(n=="mix")for(int k=0;k<count;++k)out.push_back(at(0,k)*(1.0-at(2,k))+at(1,k)*at(2,k));
+        else if(n=="smoothstep")for(int k=0;k<count;++k) {
+            const double x=std::min(1.0,std::max(0.0,(at(2,k)-at(0,k))/(at(1,k)-at(0,k))));
+            out.push_back(x*x*(3.0-2.0*x));
+        }
+        else if(n=="length")out.push_back(std::sqrt(dot(0,0)));
+        else if(n=="distance") {
+            double s=0;
+            for(std::size_t k=0;k<args[0].size();++k)s+=(args[0][k]-args[1][k])*(args[0][k]-args[1][k]);
+            out.push_back(std::sqrt(s));
+        }
+        else if(n=="dot")out.push_back(dot(0,1));
+        else if(n=="normalize")for(int k=0;k<count;++k)out.push_back(at(0,k)/std::sqrt(dot(0,0)));
+        else if(n=="cross") {
+            const auto& a=args[0]; const auto& b=args[1];
+            out={a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]};
+        }
+        else if(n=="faceforward")for(int k=0;k<count;++k)out.push_back(dot(2,1)<0.0?at(0,k):-at(0,k));
+        else if(n=="reflect")for(int k=0;k<count;++k)out.push_back(at(0,k)-2.0*dot(1,0)*at(1,k));
+        else if(n=="matrixCompMult")for(int k=0;k<count;++k)out.push_back(at(0,k)*at(1,k));
+        else if(n=="outerProduct") {
+            // Column c of the result is the first vector times component c of the second.
+            for(int c=0;c<t.columns;++c)for(int r=0;r<t.rows;++r)out.push_back(at(0,r)*at(1,c));
+        }
+        else if(n=="transpose") {
+            // The argument has t.rows columns of t.columns rows.
+            for(int c=0;c<t.columns;++c)for(int r=0;r<t.rows;++r)out.push_back(args[0][static_cast<std::size_t>(r*t.columns+c)]);
+        }
+        else if(n=="determinant")out.push_back(determinant(args[0],e.operands[0]->type.columns));
+        else return nullptr;
+        std::vector<Scalar> values;
+        for(double v:out) {
+            if(!std::isfinite(v) || std::fabs(v)>std::numeric_limits<float>::max())return nullptr;
+            values.push_back(Scalar::of(static_cast<float>(v)));
+        }
+        return makeConstant(t,std::move(values));
+    }
+    // Determinant of an n x n column-major matrix, by Laplace expansion along the first column.
+    static double determinant(const std::vector<double>& m, int n) {
+        if(n==1)return m[0];
+        double sum=0;
+        for(int r=0;r<n;++r) {
+            std::vector<double> minor;
+            for(int c=1;c<n;++c)for(int k=0;k<n;++k)if(k!=r)minor.push_back(m[static_cast<std::size_t>(c*n+k)]);
+            sum+=(r%2?-1.0:1.0)*m[static_cast<std::size_t>(r)]*determinant(minor,n-1);
+        }
+        return sum;
     }
 
     Type constructor(ast::Expr& e) {
@@ -1808,6 +1904,7 @@ private:
             else if(!declarator->init)problem="the loop index "+quote(declarator->name)+" must be initialized";
         }
         const std::string name=index?index->name:"i";
+        if(problem.empty() && !s.decl)splitCondition(s,index);
         ast::Expr* c=s.expr.get();
         if(problem.empty()) {
             static const std::set<std::string> relational={"<",">","<=",">=","==","!="};
@@ -1831,10 +1928,77 @@ private:
         if(problem.empty()) {
             if(!declarator->init->constant||!c->operands[1]->constant)problem=boundLoop(s,*declarator,*c,step,suggestion);
             else if(const auto first=scalarValue(*declarator->init))
-                if(const auto last=scalarValue(*c->operands[1]))
+                if(const auto last=scalarValue(*c->operands[1])) {
                     indexRanges[index]=Range{std::min(*first,*last),std::max(*first,*last),{}};
+                    // A constant range can still be longer than SkSL allows (see rewriteLoop).
+                    const std::string& op=c->text;
+                    const bool towards=(op=="<"||op=="<=")?step>0:(op==">"||op==">=")?step<0:false;
+                    const double span=(*last-*first)/step;
+                    const double iterations=std::max(0.0,op=="<="||op==">="?std::floor(span)+1:std::ceil(span));
+                    if(towards && iterations>kMaxLoopIterations)
+                        problem="the loop runs "+number(iterations)+" iterations, more than the "+number(kMaxLoopIterations)+" SkSL allows in a loop";
+                }
         }
         return index;
+    }
+
+    // A condition 'i < 16 && t < 2.0' bounds the loop through its comparison of the index: the
+    // loop keeps that comparison, and the other parts leave the loop from the start of the body,
+    // in their order, after the comparison as in GLSL:
+    //   for (int i = 0; i < 16 && c; i++) B     for (int i = 0; i < 16; i++) { if (!(c)) break; B }
+    // A comparison that is not the first part moves ahead of the parts before it, which must then
+    // have no side effects.
+    void splitCondition(ast::Stmt& s, const Symbol* index) {
+        if(!s.expr || s.expr->kind!=ExprKind::Binary || s.expr->text!="&&")return;
+        std::vector<ast::ExprPtr> parts;
+        conjuncts(std::move(s.expr),parts);
+        static const std::set<std::string> relational={"<",">","<=",">="};
+        std::size_t k=parts.size();
+        for(std::size_t i=0;i<parts.size() && k==parts.size();++i) {
+            const ast::Expr& x=*parts[i];
+            if(x.kind==ExprKind::Binary && relational.count(x.text) && x.operands[0]->kind==ExprKind::Name && x.operands[0]->symbol==index &&
+                !writes(*x.operands[1],index))k=i;
+            else if(effects(x))break;   // a later comparison would move ahead of this part
+        }
+        if(k==parts.size()) {   // nothing to split: put the condition back together
+            s.expr=std::move(parts[0]);
+            for(std::size_t i=1;i<parts.size();++i)s.expr=binary("&&",std::move(s.expr),std::move(parts[i]));
+            return;
+        }
+        ast::ExprPtr rest;
+        for(std::size_t i=0;i<parts.size();++i) {
+            if(i==k)continue;
+            rest=rest?binary("&&",std::move(rest),std::move(parts[i])):std::move(parts[i]);
+        }
+        s.expr=std::move(parts[k]);
+        if(s.loop->kind!=StmtKind::Block) {
+            auto body=std::make_unique<ast::Stmt>(StmtKind::Block,s.loop->loc);
+            body->scoped=false;
+            body->body.push_back(std::move(s.loop));
+            s.loop=std::move(body);
+        }
+        sink.warning(s.loc,"software.loop","for loop: SkSL runtime shaders only allow a loop condition that compares the loop index, so the loop keeps "+
+            quote(ast::toGlsl(*s.expr))+" and leaves when "+quote(ast::toGlsl(*rest))+" fails, tested at the start of the body; exactly the GLSL iterations run",
+            "no change needed");
+        sink.hint("for (");
+        s.loop->body.insert(s.loop->body.begin(),jumpIf(notOf(std::move(rest)),StmtKind::Break,s.loc));
+    }
+    static void conjuncts(ast::ExprPtr e, std::vector<ast::ExprPtr>& out) {
+        if(e->kind==ExprKind::Binary && e->text=="&&") {
+            conjuncts(std::move(e->operands[0]),out);
+            conjuncts(std::move(e->operands[1]),out);
+        } else out.push_back(std::move(e));
+    }
+    // Whether evaluating e can change anything: assignments, ++ and --, and calls of user functions
+    // or of built-ins with out parameters.
+    static bool effects(const ast::Expr& e) {
+        if(e.kind==ExprKind::Assign||((e.kind==ExprKind::Unary||e.kind==ExprKind::Postfix) && (e.text=="++"||e.text=="--")))return true;
+        if(e.kind==ExprKind::Call && e.function) {
+            if(!e.function->builtin)return true;
+            for(const auto& p:e.function->params)if(p.direction!=Direction::In)return true;
+        }
+        for(const auto& o:e.operands)if(effects(*o))return true;
+        return false;
     }
 
     // Statement lists, visited with the position of each statement (see counterStart).
@@ -1876,28 +2040,20 @@ private:
             return false;
         }
         const double iterations=proved?*proved:*stated;
-        if(iterations+1>kMaxLoopIterations) {
-            unsupported(s.loc,"loop",lead+", and it can run "+number(iterations)+" iterations, but SkSL allows at most "+number(kMaxLoopIterations-1),
+        const double cap=iterations+1;   // the last iteration only finds the condition false
+        // More iterations than one SkSL loop allows run as two nested loops (see nestLoop).
+        const bool nested=cap>kMaxLoopIterations;
+        const double innerCount=std::ceil(std::sqrt(cap)), outerCount=std::ceil(cap/innerCount);
+        if(nested && std::max(innerCount,outerCount)>kMaxLoopIterations) {
+            unsupported(s.loc,"loop",lead+", and it can run "+number(iterations)+" iterations, but SkSL allows at most "+number(kMaxLoopIterations)+
+                " in a loop, and two nested loops cover at most "+number(kMaxLoopIterations*kMaxLoopIterations),
                 proved?"narrow the range of values, for example with a smaller @minmax range":"lower the @maxiter annotation");
             return false;
         }
-        const double cap=iterations+1;   // the last iteration only finds the condition false
         // The iteration counter, named by the emitter.
-        program->symbols.emplace_back();
-        Symbol& n=program->symbols.back();
-        n.name="iteration"; n.type=Type::of(Type::Int); n.loc=s.loc; n.storage=Storage::Local; n.generated=true;
+        Symbol& n=generatedLocal("iteration",Type::of(Type::Int),s.loc);
         auto counter=[&]{return nameOf(&n,s.loc);};
-        auto decl=std::make_unique<ast::Decl>(DeclKind::Variable,s.loc);
-        decl->type.name="int";
-        decl->declarators.push_back({});
-        decl->declarators.back().name=n.name; decl->declarators.back().loc=s.loc;
-        decl->declarators.back().init=literal(n.type,0,s.loc); decl->declarators.back().symbol=&n;
-        auto loop=std::make_unique<ast::Stmt>(StmtKind::For,s.loc);
-        loop->init=std::make_unique<ast::Stmt>(StmtKind::Declaration,s.loc);
-        loop->init->decl=std::move(decl);
-        loop->expr=binary("<",counter(),literal(n.type,cap,s.loc));
-        loop->step=std::make_unique<ast::Expr>(ExprKind::Postfix,s.loc);
-        loop->step->text="++"; loop->step->type=n.type; loop->step->operands.push_back(counter()); loop->step->height=2;
+        auto loop=countingLoop(n,cap,s.loc);
         auto body=std::make_unique<ast::Stmt>(StmtKind::Block,s.loc);
         body->scoped=false;
         auto started=[&]{return binary(">",counter(),literal(n.type,0,s.loc));};
@@ -1923,10 +2079,13 @@ private:
         // An annotated count is an assumption: past it the loop stops, after testing the condition.
         if(!proved)body->body.push_back(jumpIf(binary("==",counter(),literal(n.type,iterations,s.loc)),StmtKind::Break,s.loc));
         body->body.push_back(std::move(s.loop));
-        loop->loop=std::move(body);
+        ast::StmtPtr result;
+        if(nested)result=nestLoop(std::move(loop),std::move(body),innerCount,outerCount,s.loc);
+        else{loop->loop=std::move(body);result=std::move(loop);}
         // Report before the statement changes kind.
         const std::string over="over at most "+number(iterations)+" iterations, leaving when the condition fails";
-        const std::string becomes=s.kind==StmtKind::For?"so it becomes a for loop "+over:"so it becomes a for loop "+over;
+        const std::string becomes=nested?"so it becomes two nested for loops (SkSL allows at most "+number(kMaxLoopIterations)+" iterations in a loop) "+over:
+            "so it becomes a for loop "+over;
         if(proved && bound.assumed.empty())
             sink.warning(s.loc,"software.loop",lead+", "+becomes+"; exactly the GLSL iterations run","no change needed");
         else if(proved) {
@@ -1940,19 +2099,108 @@ private:
         } else
             sink.warning(s.loc,"software.loop",lead+", "+becomes+", as its @maxiter annotation states; if the GLSL loop ran more iterations, the SkSL loop "
                 "stops early","keep the @maxiter annotation at or above the most iterations the loop runs");
-        sink.hint("for (");
-        if(s.kind==StmtKind::For && s.init) {
+        sink.hint(nested?"bool ":"for (");
+        if((s.kind==StmtKind::For && s.init) || result->kind==StmtKind::Block) {
             // The initializer runs once, before the loop, in a scope of its own.
             s.kind=StmtKind::Block;
             s.scoped=true;
-            s.body.push_back(std::move(s.init));
-            s.body.push_back(std::move(loop));
-            s.expr.reset();
+            if(s.init)s.body.push_back(std::move(s.init));
+            s.body.push_back(std::move(result));
+            s.expr.reset(); s.step.reset(); s.loop.reset();
         } else {
             s.kind=StmtKind::For;
-            s.init=std::move(loop->init); s.expr=std::move(loop->expr); s.step=std::move(loop->step); s.loop=std::move(loop->loop);
+            s.init=std::move(result->init); s.expr=std::move(result->expr); s.step=std::move(result->step); s.loop=std::move(result->loop);
         }
         return true;
+    }
+    // A loop over more iterations than SkSL allows in one loop runs as an outer loop over an inner
+    // one; together they count the iterations, and the breaks of the body leave both through a flag:
+    //   for (int n = 0; n < CAP; n++) B
+    //   { bool left = false;
+    //     for (int o = 0; o < A; o++) { for (int i = 0; i < C; i++) { int n = o * C + i; if (!(n < CAP)) break; B } if (left) break; } }
+    // where every break of the loop (the one before B included) first sets left. continue reaches
+    // the next value of n as before.
+    ast::StmtPtr nestLoop(ast::StmtPtr loop, ast::StmtPtr body, double innerCount, double outerCount, Loc at) {
+        Symbol& left=generatedLocal("left",Type::of(Type::Bool),at);
+        Symbol& o=generatedLocal("outer",Type::of(Type::Int),at);
+        Symbol& i=generatedLocal("inner",Type::of(Type::Int),at);
+        // The counter is now computed from the two loop indices.
+        ast::Declarator& counter=loop->init->decl->declarators.front();
+        counter.init=arithmetic("+",arithmetic("*",nameOf(&o,at),literal(o.type,innerCount,at)),nameOf(&i,at));
+        body->body.insert(body->body.begin(),jumpIf(notOf(std::move(loop->expr)),StmtKind::Break,at));
+        body->body.insert(body->body.begin(),std::move(loop->init));
+        redirectBreaks(*body,left);
+        auto inner=countingLoop(i,innerCount,at);
+        inner->loop=std::move(body);
+        auto outerBody=std::make_unique<ast::Stmt>(StmtKind::Block,at);
+        outerBody->scoped=false;
+        outerBody->body.push_back(std::move(inner));
+        outerBody->body.push_back(jumpIf(nameOf(&left,at),StmtKind::Break,at));
+        auto outer=countingLoop(o,outerCount,at);
+        outer->loop=std::move(outerBody);
+        auto block=std::make_unique<ast::Stmt>(StmtKind::Block,at);
+        block->body.push_back(declaration(left,boolLiteral(false,at),at));
+        block->body.push_back(std::move(outer));
+        return block;
+    }
+    // Breaks that leave the loop whose body this is (not those of nested loops and switches)
+    // become '{ left = true; break; }'.
+    static void redirectBreaks(ast::Stmt& s, const Symbol& left) {
+        switch(s.kind) {
+        case StmtKind::Break: {
+            auto flag=std::make_unique<ast::Stmt>(StmtKind::Expression,s.loc);
+            flag->expr=std::make_unique<ast::Expr>(ExprKind::Assign,s.loc);
+            flag->expr->text="="; flag->expr->type=left.type; flag->expr->height=2;
+            flag->expr->operands.push_back(nameOf(&left,s.loc));
+            flag->expr->operands.push_back(boolLiteral(true,s.loc));
+            s.kind=StmtKind::Block;
+            s.body.push_back(std::move(flag));
+            s.body.push_back(std::make_unique<ast::Stmt>(StmtKind::Break,s.loc));
+            return;
+        }
+        case StmtKind::Block: for(auto& x:s.body)redirectBreaks(*x,left); return;
+        case StmtKind::If:
+            redirectBreaks(*s.then,left);
+            if(s.otherwise)redirectBreaks(*s.otherwise,left);
+            return;
+        default: return;   // loops and switches keep their own breaks
+        }
+    }
+    Symbol& generatedLocal(const std::string& name, const Type& type, Loc at) {
+        program->symbols.emplace_back();
+        Symbol& v=program->symbols.back();
+        v.name=name; v.type=type; v.loc=at; v.storage=Storage::Local; v.generated=true;
+        return v;
+    }
+    static ast::StmtPtr declaration(const Symbol& v, ast::ExprPtr init, Loc at) {
+        auto decl=std::make_unique<ast::Decl>(DeclKind::Variable,at);
+        decl->type.name=toString(v.type);
+        decl->declarators.push_back({});
+        decl->declarators.back().name=v.name; decl->declarators.back().loc=at;
+        decl->declarators.back().init=std::move(init); decl->declarators.back().symbol=&v;
+        auto s=std::make_unique<ast::Stmt>(StmtKind::Declaration,at);
+        s->decl=std::move(decl);
+        return s;
+    }
+    // for (int v = 0; v < count; v++), without its body.
+    static ast::StmtPtr countingLoop(const Symbol& v, double count, Loc at) {
+        auto loop=std::make_unique<ast::Stmt>(StmtKind::For,at);
+        loop->init=declaration(v,literal(v.type,0,at),at);
+        loop->expr=binary("<",nameOf(&v,at),literal(v.type,count,at));
+        loop->step=std::make_unique<ast::Expr>(ExprKind::Postfix,at);
+        loop->step->text="++"; loop->step->type=v.type; loop->step->operands.push_back(nameOf(&v,at)); loop->step->height=2;
+        return loop;
+    }
+    static ast::ExprPtr arithmetic(const std::string& op, ast::ExprPtr a, ast::ExprPtr b) {
+        auto e=binary(op,std::move(a),std::move(b));
+        e->type=e->operands[0]->type;
+        return e;
+    }
+    static ast::ExprPtr boolLiteral(bool v, Loc at) {
+        auto e=std::make_unique<ast::Expr>(ExprKind::BoolLiteral,at);
+        e->text=v?"true":"false"; e->intValue=v?1:0; e->type=Type::of(Type::Bool); e->constant=true;
+        e->value=makeConstant(e->type,{Scalar::of(v)});
+        return e;
     }
     static ast::ExprPtr notOf(ast::ExprPtr e) {
         auto n=std::make_unique<ast::Expr>(ExprKind::Unary,e->loc);
@@ -1997,9 +2245,30 @@ private:
     // known range and moves towards it by a constant once in every iteration (the for step, an
     // increment in the condition, or a statement of the body that comes before any continue).
     // `bound.why` explains a failure.
+    // With a condition 'a && b', either part bounds the loop when the other does not change its counter.
     GLSL_SKSL_NOINLINE std::optional<double> provedIterations(const ast::Stmt& s, LoopBound& bound) {
+        std::vector<const ast::Expr*> parts;
+        if(s.expr && !s.decl)conjunctsOf(*s.expr,parts);
+        if(parts.size()<2)return provedBy(s,s.expr.get(),{},bound);
+        std::optional<double> best;
+        LoopBound found;
+        for(std::size_t k=0;k<parts.size();++k) {
+            std::vector<const ast::Expr*> others;
+            for(std::size_t i=0;i<parts.size();++i)if(i!=k)others.push_back(parts[i]);
+            LoopBound b;
+            const auto n=provedBy(s,parts[k],others,b);
+            if(n && (!best || *n<*best)){best=n;found=b;}
+            else if(!n && found.why.empty())found.why=b.why;
+        }
+        bound=found;
+        return best;
+    }
+    static void conjunctsOf(const ast::Expr& e, std::vector<const ast::Expr*>& out) {
+        if(e.kind==ExprKind::Binary && e.text=="&&"){conjunctsOf(*e.operands[0],out);conjunctsOf(*e.operands[1],out);}
+        else out.push_back(&e);
+    }
+    GLSL_SKSL_NOINLINE std::optional<double> provedBy(const ast::Stmt& s, const ast::Expr* c, const std::vector<const ast::Expr*>& others, LoopBound& bound) {
         static const std::set<std::string> relational={"<",">","<=",">="};
-        const ast::Expr* c=s.expr.get();
         if(c && !s.decl && c->constant && c->value && c->value->values.size()==1 && c->value->values[0].base==Type::Bool && !c->value->values[0].b)
             return s.kind==StmtKind::DoWhile?1.0:0.0;   // while (false), do ... while (false)
         if(s.decl || !c || c->kind!=ExprKind::Binary || !relational.count(c->text)) {
@@ -2027,6 +2296,7 @@ private:
         if(!v){bound.why="its condition does not compare a local variable with a bound";return std::nullopt;}
         const std::string name=quote(v->name);
         if(writes(*limit,v)){bound.why="its condition changes "+name+" twice";return std::nullopt;}
+        for(const ast::Expr* o:others)if(writes(*o,v)){bound.why="another part of its condition changes "+name;return std::nullopt;}
         const ast::Stmt& body=*s.loop;
         if(step!=0) {
             if(writes(body,v)||(s.step && writes(*s.step,v))){bound.why=name+" also changes outside the condition";return std::nullopt;}
@@ -2479,7 +2749,7 @@ private:
 };
 }
 
-std::unique_ptr<Program> analyze(ast::TranslationUnit& unit, DiagnosticSink& sink) {
-    return Analyzer(unit,sink).run();
+std::unique_ptr<Program> analyze(ast::TranslationUnit& unit, DiagnosticSink& sink, const std::string& vec2Input) {
+    return Analyzer(unit,sink,vec2Input).run();
 }
 }

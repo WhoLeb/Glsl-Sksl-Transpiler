@@ -198,6 +198,7 @@ private:
     std::map<const sema::StructDef*,std::string> structNames;
     std::unordered_map<const Stmt*,StmtInfo> stmtInfo;
     bool lanes=false, usesFragCoord=false, usesPointCoord=false;
+    std::string zeroName;                   // a float global that is 0.0 at run time (see zeroDivisor)
 
     // State of the function being emitted.
     const sema::Function* current=nullptr;
@@ -210,6 +211,7 @@ private:
     std::set<const Expr*> reported;
     std::vector<const ast::Declarator*> globalArrays;       // global arrays initialized at the start of main
     int temps=0;
+    int indexDepth=0;                       // > 0 while writing an array index
     std::string* out=nullptr;
     std::vector<SourceSpan>* outOrigins=nullptr;   // GLSL source per line of *out
     int indent=0;
@@ -369,6 +371,7 @@ private:
                     if(e.symbol->name=="gl_PointCoord" && e.symbol->storage==Storage::BuiltIn)usesPointCoord=true;
                 }
                 if(isWrite(e) && perPixel(root(*e.operands[0])))info.writes=true;
+                if(zeroDivisor(e) && zeroName.empty())zeroName=fresh("zero");
                 if(e.kind!=ExprKind::Call || !e.function)return;
                 const sema::Function& callee=*e.function;
                 for(std::size_t i=0;i<callee.params.size() && i<e.operands.size();++i)
@@ -637,7 +640,8 @@ private:
             if((e.text=="=="||e.text=="!=") && aggregate(e.operands[0]->type)){comparison(o,e,lane);break;}
             expr(o,*e.operands[0],lane,binaryPrecedence(e.text));
             o+=" "+e.text+" ";
-            expr(o,*e.operands[1],lane,binaryPrecedence(e.text)+1);
+            if(zeroDivisor(e))divisor(o,e,lane);
+            else expr(o,*e.operands[1],lane,binaryPrecedence(e.text)+1);
             break;
         case ExprKind::Assign:
             if(aggregate(e.type))
@@ -645,7 +649,8 @@ private:
             if(integerOperator(o,e,lane))break;
             expr(o,*e.operands[0],lane,15);
             o+=" "+e.text+" ";
-            expr(o,*e.operands[1],lane,2);
+            if(zeroDivisor(e))divisor(o,e,lane);
+            else expr(o,*e.operands[1],lane,2);
             break;
         case ExprKind::Ternary:
             if(aggregate(e.type))
@@ -672,7 +677,9 @@ private:
             }
             expr(o,*e.operands[0],lane,16);
             o+='[';
+            ++indexDepth;
             expr(o,*e.operands[1],lane,0);
+            --indexDepth;
             o+=']';
             break;
         case ExprKind::Field: if(!foldedElement(o,e))field(o,e,lane); break;
@@ -743,6 +750,23 @@ private:
         if(!operand.empty() && (operand[0]=='+'||operand[0]=='-') && (e.text[0]=='+'||e.text[0]=='-'))o+=' ';
         o+=operand;
     }
+    // A float division by a constant with a zero component: GLSL leaves the result unspecified and
+    // GPUs give infinity or NaN, but Skia rejects the division. The divisor gets a zero that is only
+    // known at run time (a global set at the start of main), so the division happens as on a GPU.
+    static bool zeroDivisor(const Expr& e) {
+        if(!((e.kind==ExprKind::Binary && e.text=="/")||(e.kind==ExprKind::Assign && e.text=="/=")) || e.type.base!=Type::Float)return false;
+        const Expr& d=*e.operands[1];
+        if(!d.value)return false;
+        for(const auto& v:d.value->values)if(v.base==Type::Float && v.f==0.0f)return true;
+        return false;
+    }
+    void divisor(std::string& o, const Expr& e, int lane) {
+        o+="(";
+        expr(o,*e.operands[1],lane,binaryPrecedence("+"));
+        o+=" + "+zeroName+")";
+        replaced(e,"operator","division by "+quoted(*e.operands[1])+", which is zero: Skia rejects a division by a constant zero, so the divisor gets a zero "
+            "known only at run time and the result is the infinity or NaN that GPUs give (GLSL leaves it unspecified)","no change needed",zeroName);
+    }
     // Constant integer remainders and bit operations, which SkSL lacks, are replaced by their value.
     GLSL_SKSL_NOINLINE bool folded(std::string& o, const Expr& e) {
         static const std::set<std::string> lowered={"%","&","|","^","~","<<",">>"};
@@ -771,6 +795,9 @@ private:
         } else if(f->builtin) {
             if(sema::isDerivative(f->name) && !refusedDerivative)
                 sink.error(e.loc,"internal","Internal error: derivative "+ast::toGlsl(e)+" was not lowered");
+            // A constant argument list is folded: SkSL does not accept a call of a generated
+            // function where GLSL has a constant expression (a const initializer).
+            if(BuiltinHelpers::needed(*f) && e.value && constantText(o,*e.value))return;
             if(BuiltinHelpers::needed(*f)) {
                 const std::string helper=helpers.use(*f);
                 replaced(e,"builtin","built-in "+quoted(sema::signature(*f))+" is not available in SkSL runtime shaders; it is replaced by the generated function "+
@@ -807,6 +834,18 @@ private:
         }
         const auto it=ops.find(e.text);
         if(it==ops.end() || (e.kind!=ExprKind::Binary && e.kind!=ExprKind::Assign))return false;
+        // An index must be built from loop indices and constants with operators, so a remainder
+        // by a positive constant there is written with them: a - n * (a / n) is exact for a >= 0,
+        // and GLSL leaves the remainder of a negative operand undefined.
+        const Expr& divisor=*e.operands[1];
+        if(e.text=="%" && e.kind==ExprKind::Binary && indexDepth>0 && e.type.isScalar() && divisor.value && !divisor.value->values.empty()
+           && divisor.value->values[0].base==Type::Int && divisor.value->values[0].i>0 && !sideEffects(*e.operands[0])) {
+            std::string a, n;
+            expr(a,*e.operands[0],lane,binaryPrecedence("/"));
+            expr(n,divisor,lane,binaryPrecedence("/")+1);
+            o+="("+a+" - "+n+" * ("+a+" / "+n+"))";
+            return true;
+        }
         const bool assign=e.kind==ExprKind::Assign;
         const std::string name=integerHelper(it->second,e.type.rows,assign);
         // A scalar operand of a vector operation is widened.
@@ -1425,8 +1464,49 @@ private:
         // A selection among copies of a function for an array of samplers repeats the arguments.
         if(dynamicSamplerCall(e) && i<e.function->params.size() && e.function->params[i].direction==Direction::In && !samplerType(a.type))
             return !hoisted.count(&a) && !computed(a,lane) && sideEffects(a);
+        if(deepOperand(e,i))return !hoisted.count(&a) && !computed(a,lane);
         return e.kind==ExprKind::Constructor && e.type.isBasic() && !e.type.isMatrix() && a.type.isMatrix()
             && !hoisted.count(&a) && !computed(a,lane) && sideEffects(a);
+    }
+    // Skia stops parsing at 50 levels of nesting (kMaxParseDepth in SkSLParser.cpp): a statement,
+    // '(' and an operator add a level, a call, an index or a field two. Its GPU backend parses the
+    // program again as it writes it, with every operation in parentheses, so a chain 'a + b + c'
+    // counts one level per operator. GLSL compilers have no such limit: an operand that would take
+    // an expression past kSpillDepth levels is computed into a temporary before the statement (the
+    // left part of a long chain, in its order of evaluation), which leaves room for the statements
+    // around it.
+    static constexpr unsigned kSpillDepth=20;
+    bool deepOperand(const Expr& e, std::size_t i) const {
+        const Expr& a=*e.operands[i];
+        if(depthOf(a)<=kSpillDepth || samplerType(a.type) || a.type.base==Type::Void || assignedOperand(e,i) || readWrittenOperand(e,i))return false;
+        // Operands evaluated only on a condition move before the statement only without side effects.
+        if(i>0 && (e.kind==ExprKind::Ternary || (e.kind==ExprKind::Binary && (e.text=="&&"||e.text=="||"))) && sideEffects(a))return false;
+        switch(e.kind) {
+        case ExprKind::Call: case ExprKind::Constructor: case ExprKind::Binary: case ExprKind::Ternary: return true;
+        case ExprKind::Unary: return e.text!="++" && e.text!="--";
+        case ExprKind::Index: case ExprKind::Assign: return i==1;
+        default: return false;
+        }
+    }
+    mutable std::unordered_map<const Expr*,unsigned> depths;
+    // Levels of nesting Skia parses in the SkSL of `e`, with deep operands already computed.
+    unsigned depthOf(const Expr& e) const {
+        const auto it=depths.find(&e);
+        if(it!=depths.end())return it->second;
+        unsigned d=0;
+        auto operand=[&](std::size_t i){return deepOperand(e,i)?0u:depthOf(*e.operands[i]);};
+        switch(e.kind) {
+        case ExprKind::IntLiteral: case ExprKind::UintLiteral: case ExprKind::FloatLiteral: case ExprKind::BoolLiteral: case ExprKind::Name: break;
+        default: {
+            const unsigned own=e.kind==ExprKind::Call||e.kind==ExprKind::Constructor||e.kind==ExprKind::Method||
+                e.kind==ExprKind::Index||e.kind==ExprKind::Field?2u:1u;
+            for(std::size_t i=0;i<e.operands.size();++i)d=std::max(d,operand(i));
+            d+=own;
+        }
+        }
+        if(e.parenthesized)++d;
+        depths.emplace(&e,d);
+        return d;
     }
 
     // Emits, before the statement being written, what SkSL cannot compute inside `e`.
@@ -1813,9 +1893,17 @@ private:
         line("if ("+expr(*s.expr,lane)+") {");
         release(m);
         ++indent; contents(*s.then,lane); --indent;
-        if(s.otherwise) {
+        // Skia limits how deeply it parses statements (50 levels), so else-if chains stay flat
+        // where the condition needs nothing computed before it.
+        const Stmt* other=s.otherwise.get();
+        for(;other && other->kind==StmtKind::If && !needsPrelude(*other->expr,lane);other=other->otherwise.get()) {
+            const From from(*this,other->loc,lastLine(*other));
+            line("} else if ("+expr(*other->expr,lane)+") {");
+            ++indent; contents(*other->then,lane); --indent;
+        }
+        if(other) {
             line("} else {");
-            ++indent; contents(*s.otherwise,lane); --indent;
+            ++indent; contents(*other,lane); --indent;
         }
         line("}");
     }
@@ -2206,10 +2294,18 @@ private:
         for(std::size_t i=0;i<f.params.size();++i) {
             const sema::Param& p=f.params[i];
             const Symbol* s=f.definition->params[i].symbol;
-            if(p.direction!=Direction::Out || !p.type.isBasic() || (s && a.writes.count(s)))continue;
-            const char* zero=p.type.base==Type::Bool?"(false)":p.type.base==Type::Float?"(0.0)":"(0)";
-            line(parameterName(f.definition->params[i],i,lane)+" = "+typeName(p.type)+zero+";");
+            if(p.direction!=Direction::Out || p.type.containsOpaque() || (s && a.writes.count(s)))continue;
+            zeroFill(parameterName(f.definition->params[i],i,lane),p.type);
         }
+    }
+    // SkSL cannot assign an array from a constructor: arrays, and structs that contain them, are
+    // set element by element.
+    void zeroFill(const std::string& target, const Type& t) {
+        if(t.isArray()) {
+            for(int k=0;k<t.arrays[0];++k)zeroFill(target+"["+std::to_string(k)+"]",t.element());
+        } else if(t.base==Type::Struct && t.structDef && t.containsArray()) {
+            for(const auto& field:t.structDef->fields)zeroFill(target+"."+userName(field.name),field.type);
+        } else line(target+" = "+(t.isScalar()?typeName(t)+"("+zeroValue(t)+")":zeroValue(t))+";");
     }
     // The four lanes of every parameter, and out parameters for the results of lanes 1-3.
     void quadFunction(const sema::Function& f) {
@@ -2302,6 +2398,7 @@ private:
         if(usesFragCoord||lanes)for(int lane=0;lane<copies;++lane)line("float4 "+laneName(fragCoordName,lane)+";");
         if(lanes)line("float2 "+quadName+";");
         if(!discardedName.empty())line("bool "+discardedName+";");
+        if(!zeroName.empty())line("float "+zeroName+";");
     }
     void uniformName(const std::string& name, Loc at) {
         (void)at; userName(name);
@@ -2418,6 +2515,7 @@ private:
         if(textureCoordinate)textureCoordinatePrologue(*textureCoordinate);
         for(int lane=0;lane<(lanes?4:1);++lane)line(laneName(colorName,lane)+" = float4(0);");
         if(!discardedName.empty())line(discardedName+" = false;");
+        if(!zeroName.empty())line(zeroName+" = 0.0;");
         // SkSL global arrays cannot have initializers (const ones become plain variables).
         for(const ast::Declarator* v:globalArrays)
             for(int lane=0;lane<globalCopies(*v->symbol);++lane)

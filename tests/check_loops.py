@@ -43,6 +43,15 @@ cases = [
  ('for_no_increment', '', 'void main(){float a=0.;for(int i=0;i<4;){a+=.1;++i;}color=vec4(a,0.,0.,1.);}', {}, (0.4,0,0,1)),
  ('for_step_and_continue', '', 'void main(){float a=0.;int i=0;for(i=0;i<10;i+=3){if(i==3)continue;a+=float(i);}color=vec4(a/100.,float(i)/100.,0.,1.);}', {}, (0.15,0.12,0,1)),
  ('for_annotated_uniform', 'uniform int m;\n', 'void main(){float a=0.;for(int i=0;i<m;i++){ // @maxiter{32}\na+=.1;}color=vec4(a,0.,0.,1.);}', {'m': 7}, (0.7,0,0,1)),
+ ('and_index_first', '', 'void main(){float t=1.;float r=0.;for(int i=0;i<16&&t<2.;i++){r+=.1;t+=.25;}color=vec4(r,t/10.,0.,1.);}', {}, (0.4,0.2,0,1)),
+ ('and_index_second', 'uniform float k;\n', 'void main(){float t=0.;for(int i=0;t<k&&i<16;i++){t+=.25;}color=vec4(t,0.,0.,1.);}', {'k': 1.0}, (1.0,0,0,1)),
+ ('and_index_second_cap', 'uniform float k;\n', 'void main(){float t=0.;for(int i=0;t<k&&i<16;i++){t+=.25;}color=vec4(t,0.,0.,1.);}', {'k': 100.0}, (4.0,0,0,1)),
+ ('and_side_effect_first', '', 'float g=0.;bool f(){g+=1.;return g<5.;}void main(){float s=0.;for(int i=0;f()&&i<16;i++){s+=1.;}color=vec4(s/10.,g/10.,0.,1.);}', {}, (0.4,0.5,0,1)),
+ ('while_and', 'uniform float k;\n', 'void main(){int i=0;float t=0.;while(t<k&&i<10){t+=.5;i++;}color=vec4(t/10.,float(i)/10.,0.,1.);}', {'k': 2.0}, (0.2,0.4,0,1)),
+ ('while_and_cap', 'uniform float k;\n', 'void main(){int i=0;float t=0.;while(t<k&&i<10){t+=.5;i++;}color=vec4(t/10.,float(i)/10.,0.,1.);}', {'k': 100.0}, (0.5,1.0,0,1)),
+ ('for_over_skia_limit_break', 'uniform float k;\n', 'void main(){int n=0;for(int i=0;i<200000;i++){n++;if(float(i)>=k)break;}color=vec4(float(n)/100000.,0.,0.,1.);}', {'k': 150000.0}, (1.50001,0,0,1)),
+ ('for_over_skia_limit_continue', '', 'void main(){float s=0.;for(int i=0;i<120000;i++){if(i-2*(i/2)==1)continue;s+=1.;}color=vec4(s/100000.,0.,0.,1.);}', {}, (0.6,0,0,1)),
+ ('while_over_skia_limit', '', 'void main(){int i=0;float s=0.;while(i<150000){i++;s+=1.;}color=vec4(s/100000.,float(i)/100000.,0.,1.);}', {}, (1.5,1.5,0,1)),
 ]
 
 bad = 0

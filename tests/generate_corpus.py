@@ -92,7 +92,7 @@ case('bounded_uniform_break','void main(){float a=0.;for(int i=0;i<8;++i){if(i>=
 case('annotated_uniform_bound','void main(){float a=0.;for(int i=-radius;i<=radius;++i){a+=.1;}color=vec4(a);}',declaration='uniform int radius; // @minmax{0, 8} @init{2}\nout vec4 color;')
 case('annotated_previous_line','void main(){float a=0.;for(float x=0.;x<r*2.;x+=.5){a+=.01;}color=vec4(a);}',declaration='// @minmax{1.0, 4.0}\nuniform float r;\nout vec4 color;')
 case('clamped_bound','void main(){float a=0.;for(int i=0;i<min(count,6);++i){a+=.1;}color=vec4(a);}',declaration='uniform int count;out vec4 color;')
-case('annotated_bound_too_wide','void main(){float a=0.;for(int i=0;i<count;++i){a+=.1;}color=vec4(a);}',False,declaration='uniform int count; // @minmax{0, 1000000}\nout vec4 color;',diagnostic='unsupported.loop')
+case('annotated_bound_too_wide','void main(){float a=0.;for(int i=0;i<count;++i){a+=.1;}color=vec4(a);}',declaration='uniform int count; // @minmax{0, 1000000}\nout vec4 color;')
 cases[-1]['target_expect']='reject'
 case('integer_bitwise','void main(){int a=(count & 7) ^ 2;a=(a<<1)%7;color=vec4(float(a));}',declaration='uniform int count;out vec4 color;')
 import edge_cases

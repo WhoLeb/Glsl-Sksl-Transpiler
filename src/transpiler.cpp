@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <exception>
 #include <map>
+#include <set>
+#include <tuple>
 namespace glsl_sksl {
 namespace {
 std::vector<std::string> sourceLines(const std::string& source) {
@@ -69,6 +71,19 @@ void locate(Diagnostic& d, const std::string& hint, const std::vector<std::strin
     d.skslLine=static_cast<unsigned>(line);
     d.skslColumn=static_cast<unsigned>(at+1);
 }
+
+// GLSL errors (sema.*) by position and code.
+std::set<std::tuple<unsigned,unsigned,std::string>> invalidErrors(const DiagnosticSink& sink) {
+    std::set<std::tuple<unsigned,unsigned,std::string>> errors;
+    for(const auto& d:sink.list)if(d.severity==Severity::Error && d.code.compare(0,5,"sema.")==0)errors.emplace(d.line,d.column,d.code);
+    return errors;
+}
+// The texture coordinate input when it is a vec3 or vec4 (see transpile).
+const sema::Symbol* wideTextureCoordinate(const sema::Program& program) {
+    for(const sema::Symbol* s:program.inputs)
+        if(s->textureCoordinate && s->type.base==sema::Type::Float && s->type.rows>2 && !s->type.isArray())return s;
+    return nullptr;
+}
 }
 
 bool Result::ok() const {
@@ -93,12 +108,35 @@ Result transpile(const std::string& source) noexcept {
         const auto lines=sourceLines(source);
         DiagnosticSink sink;
         std::vector<SourceSpan> origins;
-        const auto parsed=parseShader(source,sink);
+        auto parsed=parseShader(source,sink);
         // SkSL is generated whenever the shader parses, also with errors: the parts that are
         // unsupported or invalid are written as close to the GLSL as possible, and the errors say
         // what needs manual adjustment. Without a syntax tree there is nothing to write.
         if(parsed.unit && !sink.errors) {
-            const auto program=sema::analyze(*parsed.unit,sink);
+            auto program=sema::analyze(*parsed.unit,sink);
+            // The texture coordinate input holds UV in x and y. Shaders that declare it as a vec4
+            // but use it as a vec2 (invalid GLSL: 'uv_coords - offset' with a vec2 offset) are
+            // analysed again with the input typed as a vec2, which is kept when it removes GLSL
+            // errors without adding any; shaders that are valid as written are never changed.
+            const auto before=invalidErrors(sink);
+            if(const sema::Symbol* input=wideTextureCoordinate(*program); input && !before.empty()) {
+                const std::string name=input->name, type=sema::toString(input->type);
+                const Loc at=input->loc;
+                DiagnosticSink retry;
+                auto again=parseShader(source,retry);
+                if(again.unit && !retry.errors) {
+                    auto retyped=sema::analyze(*again.unit,retry,name);
+                    const auto after=invalidErrors(retry);
+                    if(after.size()<before.size() && std::includes(before.begin(),before.end(),after.begin(),after.end())) {
+                        retry.warning(at,"sema.input-vec2","input '"+name+"' is a "+type+", but the shader uses it as a vec2, which GLSL rejects; it is "
+                            "treated as a vec2 holding the texture coordinate (its x and y)",
+                            "declare it 'in vec2 "+name+"', or write '"+name+".xy' where a vec2 is needed");
+                        sink=std::move(retry);
+                        parsed=std::move(again);
+                        program=std::move(retyped);
+                    }
+                }
+            }
             r.source=emitSkSL(*parsed.unit,*program,parsed.tokens,sink,origins,r.renamedIdentifiers);
         }
         unsigned errors=0;

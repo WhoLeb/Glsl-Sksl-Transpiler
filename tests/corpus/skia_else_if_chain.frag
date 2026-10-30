@@ -1,0 +1,4 @@
+#version 320 es
+precision highp float;
+uniform float u;out vec4 color;
+void main(){float c=0.;if(u==0.)c=1.;else if(u==1.)c=1.;else if(u==2.)c=2.;else if(u==3.)c=3.;else if(u==4.)c=4.;else if(u==5.)c=5.;else if(u==6.)c=6.;else if(u==7.)c=7.;else if(u==8.)c=8.;else if(u==9.)c=9.;else if(u==10.)c=10.;else if(u==11.)c=11.;else if(u==12.)c=12.;else if(u==13.)c=13.;else if(u==14.)c=14.;else if(u==15.)c=15.;else if(u==16.)c=16.;else if(u==17.)c=17.;else if(u==18.)c=18.;else if(u==19.)c=19.;else if(u==20.)c=20.;else if(u==21.)c=21.;else if(u==22.)c=22.;else if(u==23.)c=23.;else if(u==24.)c=24.;else if(u==25.)c=25.;else if(u==26.)c=26.;else if(u==27.)c=27.;else if(u==28.)c=28.;else if(u==29.)c=29.;else if(u==30.)c=30.;else if(u==31.)c=31.;else if(u==32.)c=32.;else if(u==33.)c=33.;else if(u==34.)c=34.;else if(u==35.)c=35.;else if(u==36.)c=36.;else if(u==37.)c=37.;else if(u==38.)c=38.;else if(u==39.)c=39.;color=vec4(c);}

@@ -448,6 +448,7 @@
     "file": "dependent_nested_loop.frag",
     "expect": "accept",
     "diagnostic": "",
+    "target_expect": "reject",
     "source_valid": true
   },
   {
@@ -487,6 +488,7 @@
     "file": "switch_fallthrough.frag",
     "expect": "accept",
     "diagnostic": "",
+    "target_expect": "reject",
     "source_valid": true
   },
   {
@@ -535,8 +537,8 @@
   {
     "name": "annotated_bound_too_wide",
     "file": "annotated_bound_too_wide.frag",
-    "expect": "reject",
-    "diagnostic": "unsupported.loop",
+    "expect": "accept",
+    "diagnostic": "",
     "target_expect": "reject",
     "source_valid": true
   },
@@ -4915,6 +4917,22 @@
     "source_valid": true
   },
   {
+    "name": "uv_vec4_used_as_vec2",
+    "file": "uv_vec4_used_as_vec2.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": false,
+    "note": "vec4 uv_coords used as vec2; accepted via the sema.input-vec2 retry"
+  },
+  {
+    "name": "uv_vec4_used_as_vec2_and_vec4_invalid",
+    "file": "uv_vec4_used_as_vec2_and_vec4_invalid.frag",
+    "expect": "reject",
+    "diagnostic": "Invalid",
+    "source_valid": false,
+    "note": "uses the vec4 input whole as well as a vec2; keeps the sema.operator error"
+  },
+  {
     "name": "es100_fragdata0",
     "file": "es100_fragdata0.frag",
     "expect": "accept",
@@ -5311,8 +5329,36 @@
   {
     "name": "cf_for_compound_condition",
     "file": "cf_for_compound_condition.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_and_condition_index_first",
+    "file": "cf_for_and_condition_index_first.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_and_condition_index_second",
+    "file": "cf_for_and_condition_index_second.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_and_condition_side_effect_first",
+    "file": "cf_for_and_condition_side_effect_first.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_and_condition",
+    "file": "cf_while_and_condition.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -5685,13 +5731,6 @@
     "source_valid": true
   },
   {
-    "name": "bi_mat4_inverse_determinant",
-    "file": "bi_mat4_inverse_determinant.frag",
-    "expect": "accept",
-    "diagnostic": "",
-    "source_valid": true
-  },
-  {
     "name": "rename_intrinsic_uniform_collision",
     "file": "rename_intrinsic_uniform_collision.frag",
     "expect": "accept",
@@ -5717,6 +5756,93 @@
     "file": "rename_reserved_uniform.frag",
     "expect": "accept",
     "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_mat4_inverse_determinant",
+    "file": "bi_mat4_inverse_determinant.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "skia_const_helper_tanh",
+    "file": "skia_const_helper_tanh.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "a generated helper call is not a constant expression in SkSL: the const initializer is folded",
+    "source_valid": true
+  },
+  {
+    "name": "skia_const_helper_int_max",
+    "file": "skia_const_helper_int_max.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "int max is a generated helper; folded in a const initializer",
+    "source_valid": true
+  },
+  {
+    "name": "skia_const_transpose",
+    "file": "skia_const_transpose.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "transpose of a const matrix is folded",
+    "source_valid": true
+  },
+  {
+    "name": "skia_index_remainder",
+    "file": "skia_index_remainder.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "a remainder in an index must stay an operator expression for Skia",
+    "source_valid": true
+  },
+  {
+    "name": "skia_long_sum_chain",
+    "file": "skia_long_sum_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "Skia limits parse depth to 50; the left part of the chain moves into temporaries",
+    "source_valid": true
+  },
+  {
+    "name": "skia_nested_calls",
+    "file": "skia_nested_calls.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "each nested call costs two levels of Skia parse depth",
+    "source_valid": true
+  },
+  {
+    "name": "skia_else_if_chain",
+    "file": "skia_else_if_chain.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "else if stays flat instead of nesting a block per branch",
+    "source_valid": true
+  },
+  {
+    "name": "skia_struct_out_unassigned",
+    "file": "skia_struct_out_unassigned.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "Skia rejects an out parameter that is never assigned; structs with arrays are zeroed field by field",
+    "source_valid": true
+  },
+  {
+    "name": "skia_const_zero_division",
+    "file": "skia_const_zero_division.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "Skia rejects division by a constant zero; the divisor gets a run-time zero",
+    "source_valid": true
+  },
+  {
+    "name": "skia_loop_over_limit",
+    "file": "skia_loop_over_limit.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "Skia allows fewer than 100000 iterations per loop: two nested loops",
     "source_valid": true
   }
 ]

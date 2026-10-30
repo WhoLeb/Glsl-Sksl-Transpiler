@@ -179,6 +179,15 @@ void constantFolding() {
         P+"float a[max(2,3)]; void main(){color=vec4(a[3]);}",
         P+"const mat2 m=mat2(1.,2.,3.,4.); float a[int(m[1][0])]; void main(){color=vec4(a[3]);}",
         P+"float a[ivec2(1,2).y+1]; void main(){color=vec4(a[3]);}",
+        // Built-ins the transpiler replaces by generated functions are folded too (SkSL needs the value in const initializers).
+        P+"float a[int(tanh(1.)*10.)]; void main(){color=vec4(a[7]);}",
+        P+"float a[int(determinant(mat2(2.,0.,0.,3.)))]; void main(){color=vec4(a[6]);}",
+        P+"float a[int(transpose(mat2(1.,2.,3.,4.))[0][1])]; void main(){color=vec4(a[3]);}",
+        P+"float a[int(outerProduct(vec2(1.,2.),vec3(3.,4.,5.))[2][1])]; void main(){color=vec4(a[10]);}",
+        P+"float a[int(pow(2.,3.))]; void main(){color=vec4(a[8]);}",
+        P+"float a[int(length(vec2(3.,4.)))]; void main(){color=vec4(a[5]);}",
+        P+"float a[int(smoothstep(0.,1.,.5)*8.)]; void main(){color=vec4(a[4]);}",
+        P+"float a[int(mod(7.,3.))]; void main(){color=vec4(a[1]);}",
     };
     for(const auto& s:cases)CHECK(error(s,"sema.index"));
 }
@@ -602,6 +611,12 @@ void softwareFallbacks() {
     CHECK(has(whileCounter,"software.loop",Severity::Warning));
     CHECK(contains(whileCounter.source,"for (int iteration = 0; iteration < 4; iteration++)"));
 
+    Result andLoop=transpile(P+"void main(){float t=1.;for(int i=0;i<16&&t<2.;i++){t+=.5;} color=vec4(t);}");
+    CHECK(andLoop.ok());
+    CHECK(has(andLoop,"software.loop",Severity::Warning));
+    CHECK(contains(andLoop.source,"for (int i = 0; i < 16; i++)"));
+    CHECK(contains(andLoop.source,"if (!(t < 2.))"));
+
     Result maxiter=transpile(P+"uniform float e; void main(){float d=1.; while(d>e){ // @maxiter{64}\nd*=.5;} color=vec4(d);}");
     CHECK(maxiter.ok());
     CHECK(has(maxiter,"software.loop",Severity::Warning));
@@ -616,6 +631,29 @@ void softwareFallbacks() {
     CHECK(contains(ops.source,"glsl_shl("));
     CHECK(contains(ops.source,"glsl_shrAssign("));
     CHECK(contains(ops.source,"glsl_and("));
+
+    // A vec4 texture-coordinate input used where a vec2 is needed is retried as vec2.
+    const std::string UV="#version 310 es\nprecision highp float;\nlayout(location = 0) in highp vec4 uv_coords;\nuniform vec2 iResolution;\nout vec4 out_color;\n";
+    Result uvValid=transpile(UV+"void main(){ out_color = vec4(uv_coords.xy, uv_coords.w, 1.0); }");
+    CHECK(uvValid.ok());
+    CHECK(!has(uvValid,"sema.input-vec2",Severity::Warning));
+    CHECK(contains(uvValid.source,"float4 uv_coords;"));
+
+    Result uvAsVec2=transpile(UV+"vec3 f(vec2 p){ return vec3(p, 0.0); } void main(){ vec2 d = uv_coords * 2.0 - vec2(1.0); out_color = vec4(f(uv_coords).xy, d); }");
+    CHECK(uvAsVec2.ok());
+    CHECK(has(uvAsVec2,"sema.input-vec2",Severity::Warning));
+    CHECK(contains(uvAsVec2.source,"float2 uv_coords;"));
+
+    Result uvUsesZw=transpile(UV+"void main(){ vec2 d = uv_coords - vec2(0.5); out_color = vec4(d, uv_coords.zw); }");
+    CHECK(!uvUsesZw.ok());
+    CHECK(has(uvUsesZw,"sema.operator",Severity::Error));
+    CHECK(!has(uvUsesZw,"sema.input-vec2",Severity::Warning));
+
+    Result uvOtherError=transpile(UV+"void main(){ vec2 d = uv_coords * 2.0 - 1.0; out_color = vec4(d, 0.0, undeclared); }");
+    CHECK(!uvOtherError.ok());
+    CHECK(has(uvOtherError,"sema.input-vec2",Severity::Warning));
+    CHECK(has(uvOtherError,"sema.undeclared",Severity::Error));
+    CHECK(!has(uvOtherError,"sema.type-mismatch",Severity::Error));
 }
 
 int main() {
