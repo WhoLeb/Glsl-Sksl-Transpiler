@@ -112,7 +112,7 @@ def main():
                 if run.returncode or not run.stdout: raise RuntimeError('Conversion failed: '+run.stderr)
                 (artifacts/(case['name']+'.sksl')).write_text(run.stdout)
                 if skia:
-                    diagnostic=compile_target(skia,run.stdout,case.get('target_expect','accept'))
+                    diagnostic=compile_target(skia,run.stdout)
                     (artifacts/(case['name']+'.target.stderr')).write_text(diagnostic)
             print('PASS '+case['name'])
         except (RuntimeError,OSError) as error:

@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
 project(glsl_sksl_transpiler VERSION 0.1.0 LANGUAGES CXX)
+# Used through add_subdirectory (for example as a Git submodule), this file builds only the
+# library glsl_sksl::glsl_sksl; the command-line tool (cli/) and the tests (tests/) are built
+# when this is the top-level project, or when their options are turned on.
 set(GLSL_SKSL_TOP_LEVEL OFF)
 if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   set(GLSL_SKSL_TOP_LEVEL ON)
 endif()
 option(GLSL_SKSL_BUILD_TOOLS "Build the glsl-to-sksl command-line tool" ${GLSL_SKSL_TOP_LEVEL})
+option(GLSL_SKSL_BUILD_TESTS "Build the tests" ${GLSL_SKSL_TOP_LEVEL})
+option(GLSL_SKSL_INSTALL "Generate the install and package export rules" ${GLSL_SKSL_TOP_LEVEL})
+
 add_library(glsl_sksl STATIC
   src/ast.cpp src/builtins.cpp src/language.cpp src/lexer.cpp src/parser.cpp src/preprocessor.cpp src/sema.cpp
   src/emitter.cpp src/helpers.cpp src/transpiler.cpp src/types.cpp)
@@ -17,46 +23,21 @@ if(MSVC)
 else()
   target_compile_options(glsl_sksl PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+if(GLSL_SKSL_INSTALL)
+  include(GNUInstallDirs)
+  install(TARGETS glsl_sksl EXPORT glsl_sksl_targets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(EXPORT glsl_sksl_targets NAMESPACE glsl_sksl:: FILE glsl_sksl-config.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/glsl_sksl)
+endif()
+
 if(GLSL_SKSL_BUILD_TOOLS)
-  add_executable(glsl-to-sksl src/main.cpp)
-  target_link_libraries(glsl-to-sksl PRIVATE glsl_sksl)
+  add_subdirectory(cli)
+  # Next to the build's other outputs, where the scripts and documentation expect it.
+  set_target_properties(glsl-to-sksl PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 endif()
-include(GNUInstallDirs)
-install(TARGETS glsl_sksl EXPORT glsl_sksl_targets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(EXPORT glsl_sksl_targets NAMESPACE glsl_sksl:: FILE glsl_sksl-config.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/glsl_sksl)
-if(GLSL_SKSL_TOP_LEVEL)
-  include(CTest)
-endif()
-if(GLSL_SKSL_TOP_LEVEL AND BUILD_TESTING)
-  add_executable(transpiler-tests tests/transpiler_tests.cpp)
-  target_link_libraries(transpiler-tests PRIVATE glsl_sksl)
-  add_test(NAME transpiler COMMAND transpiler-tests)
-  # Front-end tests use the internal headers in src/.
-  add_executable(frontend-tests tests/frontend_tests.cpp)
-  target_include_directories(frontend-tests PRIVATE src)
-  target_link_libraries(frontend-tests PRIVATE glsl_sksl)
-  add_test(NAME frontend COMMAND frontend-tests)
-  add_executable(sema-tests tests/sema_tests.cpp)
-  target_include_directories(sema-tests PRIVATE src)
-  target_link_libraries(sema-tests PRIVATE glsl_sksl)
-  add_test(NAME sema COMMAND sema-tests)
-  find_package(Python3 COMPONENTS Interpreter)
-  option(GLSL_SKSL_COMPILER_TESTS "Enable strict Skia compiler-backed corpus" OFF)
-  if(Python3_Interpreter_FOUND)
-    add_test(NAME fragment-conversions COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_corpus.py --transpiler $<TARGET_FILE:glsl-to-sksl>
-      --allow-missing-skia --artifacts ${CMAKE_CURRENT_BINARY_DIR}/conversion-results)
-    add_test(NAME validation-harness COMMAND ${Python3_EXECUTABLE} -m unittest discover
-      -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p test_harness.py)
-  endif()
-  if(GLSL_SKSL_COMPILER_TESTS)
-    if(NOT Python3_Interpreter_FOUND)
-      message(FATAL_ERROR "Compiler corpus requires Python3")
-    endif()
-    add_test(NAME fragment-corpus COMMAND ${Python3_EXECUTABLE}
-      ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_corpus.py --transpiler $<TARGET_FILE:glsl-to-sksl>
-      --artifacts ${CMAKE_CURRENT_BINARY_DIR}/corpus-results)
-  endif()
+if(GLSL_SKSL_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()

@@ -2,6 +2,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <utility>
 namespace glsl_sksl {
 enum class Severity { Error, Warning };
 // One message about the conversion. Positions are 1-based; 0 when there is no such position.
@@ -30,14 +31,18 @@ struct Result {
                                  // (Skia rejects it), or empty when the GLSL itself is invalid
     };
     State state=State::Failure;
+    std::vector<std::pair<std::string,std::string>> renamedIdentifiers; // GLSL identifiers renamed in SkSL, including uniforms
     std::string source;          // the generated SkSL; with errors it starts with one '#error' line per error
     std::vector<Diagnostic> diagnostics;   // every error and warning, sorted by GLSL position
     bool ok() const;             // true when no diagnostic is an error (state == Success)
     std::map<unsigned, std::vector<Diagnostic>> diagnosticsByLine() const; // keyed by GLSL line
 };
 // Converts a GLSL ES fragment shader (1.00, 3.00, 3.10, 3.20) to a Skia runtime shader; see README.md.
-// Never throws: internal failures are reported as diagnostics.
-Result transpile(const std::string& source);
+// Never throws: internal failures, memory exhaustion included, give state Failure with a
+// diagnostic when there is memory for one. Exception: with MSVC's iterator debugging (the Debug
+// default) the standard containers' noexcept constructors allocate, and the standard library
+// terminates the program when that allocation fails.
+Result transpile(const std::string& source) noexcept;
 // Multi-line human-readable rendering: position, message, GLSL line, SkSL line and suggestion.
 std::string formatDiagnostic(const Diagnostic& diagnostic);
 }

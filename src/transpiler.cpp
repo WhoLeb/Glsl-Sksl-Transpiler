@@ -72,6 +72,7 @@ void locate(Diagnostic& d, const std::string& hint, const std::vector<std::strin
 }
 
 bool Result::ok() const {
+    if(state!=State::Success)return false;
     for(const auto& d:diagnostics)if(d.severity==Severity::Error)return false;
     return true;
 }
@@ -82,10 +83,14 @@ std::map<unsigned, std::vector<Diagnostic>> Result::diagnosticsByLine() const {
     return byLine;
 }
 
-Result transpile(const std::string& source) {
+// Allocation failures inside are caught. Constructing and returning `r` allocates nothing in
+// standard libraries without debug containers; with MSVC's iterator debugging (the Debug
+// default) the containers' noexcept constructors allocate and terminate when that fails, which
+// no code outside the standard library can prevent.
+Result transpile(const std::string& source) noexcept {
     Result r;
-    const auto lines=sourceLines(source);
     try {
+        const auto lines=sourceLines(source);
         DiagnosticSink sink;
         std::vector<SourceSpan> origins;
         const auto parsed=parseShader(source,sink);
@@ -94,7 +99,7 @@ Result transpile(const std::string& source) {
         // what needs manual adjustment. Without a syntax tree there is nothing to write.
         if(parsed.unit && !sink.errors) {
             const auto program=sema::analyze(*parsed.unit,sink);
-            r.source=emitSkSL(*parsed.unit,*program,parsed.tokens,sink,origins);
+            r.source=emitSkSL(*parsed.unit,*program,parsed.tokens,sink,origins,r.renamedIdentifiers);
         }
         unsigned errors=0;
         std::vector<std::size_t> order(sink.list.size());
@@ -120,19 +125,26 @@ Result transpile(const std::string& source) {
             if(!r.source.empty())locate(d,i<sink.skslHints.size()?sink.skslHints[i]:std::string(),lines,sksl,origins,errors+1);
             r.diagnostics.push_back(std::move(d));
         }
+        const auto skslLines=sourceLines(r.source);
+        for(auto& d:r.diagnostics) {
+            if(d.line>0 && d.line<=lines.size())d.sourceLine=lines[d.line-1];
+            if(d.skslLine>0 && d.skslLine<=skslLines.size())d.skslSourceLine=skslLines[d.skslLine-1];
+        }
+        r.state=Result::State::Success;
+        for(const auto& d:r.diagnostics)if(d.severity==Severity::Error)r.state=Result::State::Failure;
     } catch(const std::exception& e) {
         r.source.clear();
-        r.diagnostics.push_back({0,0,std::string("Internal error: ")+e.what(),Severity::Error,"internal"});
+        r.diagnostics.clear();
+        r.renamedIdentifiers.clear();
+        r.state=Result::State::Failure;
+        try { r.diagnostics.push_back({0,0,std::string("Internal error: ")+e.what(),Severity::Error,"internal"}); } catch(...) {}
     } catch(...) {
         r.source.clear();
-        r.diagnostics.push_back({0,0,"Internal error",Severity::Error,"internal"});
+        r.diagnostics.clear();
+        r.renamedIdentifiers.clear();
+        r.state=Result::State::Failure;
+        try { r.diagnostics.push_back({0,0,"Internal error",Severity::Error,"internal"}); } catch(...) {}
     }
-    const auto sksl=sourceLines(r.source);
-    for(auto& d:r.diagnostics) {
-        if(d.line>0 && d.line<=lines.size())d.sourceLine=lines[d.line-1];
-        if(d.skslLine>0 && d.skslLine<=sksl.size())d.skslSourceLine=sksl[d.skslLine-1];
-    }
-    r.state=r.ok()?Result::State::Success:Result::State::Failure;
     return r;
 }
 

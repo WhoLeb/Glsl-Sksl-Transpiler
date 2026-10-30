@@ -1,0 +1,16 @@
+# The glsl-to-sksl command-line tool. Built from the top-level project of this repository, or on
+# its own against an installed library: cmake -S cli -B build-cli -DCMAKE_PREFIX_PATH=<install dir>
+cmake_minimum_required(VERSION 3.16)
+project(glsl_to_sksl LANGUAGES CXX)
+if(NOT TARGET glsl_sksl::glsl_sksl)
+  find_package(glsl_sksl REQUIRED)
+endif()
+add_executable(glsl-to-sksl main.cpp)
+target_link_libraries(glsl-to-sksl PRIVATE glsl_sksl::glsl_sksl)
+if(MSVC)
+  target_compile_options(glsl-to-sksl PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(glsl-to-sksl PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+include(GNUInstallDirs)
+install(TARGETS glsl-to-sksl RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

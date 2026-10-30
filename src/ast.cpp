@@ -1,12 +1,17 @@
 #include "ast.hpp"
 namespace glsl_sksl::ast {
+// Destructors cannot throw. If the work list cannot grow (memory exhausted, as when the tree is
+// freed after an allocation failure), push_back leaves the node where it is, and the nodes not
+// taken yet are freed recursively instead, which the parser's height limit keeps shallow enough.
 Expr::~Expr() {
-    std::vector<ExprPtr> pending;
-    for(auto& o:operands)if(o)pending.push_back(std::move(o));
-    while(!pending.empty()) {
-        ExprPtr e=std::move(pending.back()); pending.pop_back();
-        for(auto& o:e->operands)if(o)pending.push_back(std::move(o));
-    }
+    try {
+        std::vector<ExprPtr> pending;
+        for(auto& o:operands)if(o)pending.push_back(std::move(o));
+        while(!pending.empty()) {
+            ExprPtr e=std::move(pending.back()); pending.pop_back();
+            for(auto& o:e->operands)if(o)pending.push_back(std::move(o));
+        }
+    } catch(...) {}
 }
 
 bool Qualifiers::has(const std::string& word) const {

@@ -1,4 +1,5 @@
 #include "emitter.hpp"
+#include <charconv>
 #include "helpers.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -96,12 +97,9 @@ int precedence(const Expr& e) {
 
 // Shortest decimal spelling that reads back as the same 32-bit float.
 std::string floatText(float f) {
-    char buffer[48];
-    for(int digits=1;digits<=9;++digits) {
-        std::snprintf(buffer,sizeof buffer,"%.*g",digits,static_cast<double>(f));
-        if(std::strtof(buffer,nullptr)==f)break;
-    }
-    std::string s=buffer;
+    char buffer[64];
+    const auto result=std::to_chars(buffer,buffer+sizeof buffer,f);
+    std::string s(buffer,result.ptr);
     if(s.find_first_of(".e")==std::string::npos)s+=".0";
     return s;
 }
@@ -173,6 +171,7 @@ public:
         return definitions+structs+globals+code;
     }
 
+    const std::map<std::string,std::string>& identifierMap() const { return renamed; }
 private:
     struct FunctionInfo {
         std::vector<const sema::Function*> callees;     // user functions with a definition, in call order
@@ -281,7 +280,7 @@ private:
         return laneNames[key]=fresh(name+"_L"+std::to_string(lane));
     }
     std::string userName(const std::string& name) const {
-        if(!kReserved.count(name) && name.compare(0,3,"sk_")!=0)return name;
+        if(!kReserved.count(name) && !sema::isBuiltinFunctionName(name,320) && name.compare(0,3,"sk_")!=0)return name;
         const auto it=renamed.find(name);
         if(it!=renamed.end())return it->second;
         return renamed[name]=fresh(name.compare(0,3,"sk_")==0?"_"+name:name+"_");
@@ -310,7 +309,7 @@ private:
             if(s->name=="gl_DepthRange")return typeName(s->type)+"(0.0, 1.0, 1.0)";
             return s->name;
         case Storage::Output: return laneName(colorName,lane);
-        case Storage::Uniform: return s->name;
+        case Storage::Uniform: return userName(s->name);
         case Storage::Global: return s->constQualified?userName(s->name):laneName(userName(s->name),lane);
         default: {
             const std::string name=s->generated?generatedName(s):userName(s->name);
@@ -1080,9 +1079,9 @@ private:
     }
     bool lookupPrelude=false;
     std::string elementName(const Symbol* u, int element) {
-        if(element<0)return u->name;
+        if(element<0)return userName(u->name);
         auto& n=childNames[{u,element}];
-        if(n.empty())n=fresh(u->name+"_"+std::to_string(element));
+        if(n.empty())n=fresh(userName(u->name)+"_"+std::to_string(element));
         return n;
     }
     std::string sizeName(const Symbol* u, int element) {
@@ -1338,7 +1337,7 @@ private:
         const Expr& base=*e.operands[0];
         const Symbol* s=base.kind==ExprKind::Name?base.symbol:nullptr;
         if(s && s->storage==Storage::Uniform && s->type.base==Type::Struct && s->type.structDef && s->type.structDef->block && !s->type.isArray()) {
-            o+=e.text;   // member of a flattened uniform block
+            o+=userName(e.text);   // member of a flattened uniform block
             return;
         }
         if(isBuiltin(base,"gl_DepthRange")) {
@@ -2305,9 +2304,7 @@ private:
         if(!discardedName.empty())line("bool "+discardedName+";");
     }
     void uniformName(const std::string& name, Loc at) {
-        if(userName(name)!=name)
-            error(at,"reserved-name","uniform name "+quoted(name)+": SkSL reserves it, and uniforms keep their names so the application can set them",
-                "rename the uniform");
+        (void)at; userName(name);
     }
     static std::string quoted(const std::string& s){return "'"+s+"'";}
     int globalCopies(const Symbol& s) const {return lanes && !s.constQualified?4:1;}
@@ -2339,7 +2336,7 @@ private:
                     if(s->storage==Storage::Uniform) {
                         uniformName(s->name,s->loc);
                         if(samplerType(s->type))samplerDeclarations(*s);
-                        else line("uniform "+typeName(s->type)+" "+s->name+dims(s->type)+";"+(s->annotation.empty()?"":"  // "+s->annotation));
+                        else line("uniform "+typeName(s->type)+" "+userName(s->name)+dims(s->type)+";"+(s->annotation.empty()?"":"  // "+s->annotation));
                     } else if(s->storage==Storage::Input) {
                         // The texture coordinate is computed at the start of main; other inputs
                         // are refused, and keep a declaration so the SkSL shows them.
@@ -2358,7 +2355,7 @@ private:
                     for(const auto& f:def.fields) {
                         const From from(*this,f.loc,f.loc.line);
                         uniformName(f.name,f.loc);
-                        line("uniform "+typeName(f.type)+" "+f.name+dims(f.type)+";");
+                        line("uniform "+typeName(f.type)+" "+userName(f.name)+dims(f.type)+";");
                     }
                 }
             }
@@ -2430,7 +2427,10 @@ private:
 }
 
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
-    std::vector<SourceSpan>& origins) {
-    return Emitter(unit,program,tokens,sink).run(origins);
+    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings) {
+    Emitter emitter(unit,program,tokens,sink);
+    auto source=emitter.run(origins);
+    bindings.assign(emitter.identifierMap().begin(),emitter.identifierMap().end());
+    return source;
 }
 }

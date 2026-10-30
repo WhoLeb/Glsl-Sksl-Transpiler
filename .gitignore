@@ -2,3 +2,4 @@ build/
 build-release/
 __pycache__/
 *.pyc
+skslc/

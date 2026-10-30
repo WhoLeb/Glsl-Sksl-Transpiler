@@ -448,7 +448,6 @@
     "file": "dependent_nested_loop.frag",
     "expect": "accept",
     "diagnostic": "",
-    "target_expect": "reject",
     "source_valid": true
   },
   {
@@ -488,7 +487,6 @@
     "file": "switch_fallthrough.frag",
     "expect": "accept",
     "diagnostic": "",
-    "target_expect": "reject",
     "source_valid": true
   },
   {
@@ -5689,6 +5687,34 @@
   {
     "name": "bi_mat4_inverse_determinant",
     "file": "bi_mat4_inverse_determinant.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "rename_intrinsic_uniform_collision",
+    "file": "rename_intrinsic_uniform_collision.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "rename_intrinsic_sampler",
+    "file": "rename_intrinsic_sampler.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "rename_block_field",
+    "file": "rename_block_field.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "rename_reserved_uniform",
+    "file": "rename_reserved_uniform.frag",
     "expect": "accept",
     "diagnostic": "",
     "source_valid": true

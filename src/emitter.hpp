@@ -17,5 +17,5 @@ struct SourceSpan { Loc start; unsigned endLine=0; };
 // `origins` receives, per line of the returned SkSL, the span of the statement or declaration it
 // was generated from (empty for generated code such as built-in replacements).
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
-    std::vector<SourceSpan>& origins);
+    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings);
 }

@@ -2,7 +2,13 @@
 
 Experimental dependency-free C++17 static library (plus a command-line tool) that converts GLSL ES fragment shaders to Skia runtime shaders. The goal is output that renders the same as the input, and a conversion for every valid shader: what SkSL lacks is replaced by a software implementation, reported as a warning that names any assumption the replacement makes. Constructs that have no replacement yet are refused with a diagnostic instead of being approximated.
 
-Build and test:
+The repository has three CMake parts:
+
+- `CMakeLists.txt`: the library `glsl_sksl` (sources in `src/`, public header in `include/`), with its install and package rules.
+- `cli/CMakeLists.txt`: the command-line tool `glsl-to-sksl` (`cli/main.cpp`).
+- `tests/CMakeLists.txt`: the tests.
+
+Build and test everything (the tool and the tests are on when this is the top-level project):
 
 ```sh
 cmake -S . -B build
@@ -13,7 +19,16 @@ build/glsl-to-sksl examples/solid.frag solid.sksl
 
 ## Using the library
 
-Add the project with `add_subdirectory(glsl-sksl-transpiler)` and link `glsl_sksl::glsl_sksl`, or `cmake --install` it and use `find_package(glsl_sksl)`. The library is static (`glsl_sksl.lib` / `libglsl_sksl.a`); the tests and the command-line tool are only built when it is the top-level project. Build it with the same compiler, configuration and MSVC runtime (`/MD` vs `/MT`) as the consuming project.
+As a Git submodule (or any copy of the repository), add it with `add_subdirectory` and link the library. Only the library is built: the tool and the tests are off when the repository is not the top-level project, and so are its install rules.
+
+```cmake
+add_subdirectory(external/glsl-sksl-transpiler)
+target_link_libraries(my_app PRIVATE glsl_sksl::glsl_sksl)
+```
+
+The options `GLSL_SKSL_BUILD_TOOLS`, `GLSL_SKSL_BUILD_TESTS` and `GLSL_SKSL_INSTALL` turn the tool, the tests and the install rules on or off (each defaults to whether this is the top-level project). Alternatively, `cmake --install` the library and use `find_package(glsl_sksl)` with the same target. The tool also builds on its own against an installed library: `cmake -S cli -B build-cli -DCMAKE_PREFIX_PATH=<install prefix>`.
+
+The library is static (`glsl_sksl.lib` / `libglsl_sksl.a`). Build it with the same compiler, configuration and MSVC runtime (`/MD` vs `/MT`) as the consuming project.
 
 ```cpp
 #include "glsl_sksl/transpiler.hpp"
@@ -148,7 +163,7 @@ A loop with neither is refused (`unsupported.loop`) with a suggestion to annotat
 
   Layout qualifiers have no SkSL equivalent and are dropped, so an invalid one (a misspelled name, a location where GLSL ES does not allow it, a missing value) is reported as the warning `sema.layout` with a suggestion (`did you mean 'location'?`) instead of an error. `location` keeps its effect: it selects the output and the texture coordinate input.
 
-  Variables, uniforms, functions and structs keep their GLSL names. Only identifiers that SkSL reserves are renamed (`float2` becomes `float2_`, `sk_x` becomes `_sk_x`). Names the emitter introduces are plain words (`coord`, `fragColor` for `gl_FragColor`, `fragCoord`, `quad`, `tmp1`, `x_L1` for the copy of `x` in another pixel of the quad, `glsl_sinh` for a built-in replacement), chosen so that they collide with no identifier of the shader: if the shader already uses `coord`, the parameter becomes `coord_2`.
+  Variables, uniforms, functions and structs keep their GLSL names when SkSL permits them. The returned `renamedIdentifiers` vector contains pairs of original identifiers and emitted identifiers; use it when binding renamed ordinary uniforms. This is an identifier rename table, not full resource reflection: expanded sampler children and size uniforms are listed in the generated declarations and texture diagnostics. Identifiers that SkSL reserves, including intrinsic names, are renamed (`float2` becomes `float2_`, `sk_x` becomes `_sk_x`). Names the emitter introduces are plain words (`coord`, `fragColor` for `gl_FragColor`, `fragCoord`, `quad`, `tmp1`, `x_L1` for the copy of `x` in another pixel of the quad, `glsl_sinh` for a built-in replacement), chosen so that they collide with no identifier of the shader: if the shader already uses `coord`, the parameter becomes `coord_2`.
 
   SkSL has no array constructors and cannot initialize, assign, compare, select (`?:`) or sequence (`,`) arrays and structs containing arrays, nor return them from functions. The emitter computes such values before the statement that uses them, element by element, keeping GLSL's evaluation order: initializations and assignments become element assignments (through a temporary when the value reads the target), constructors elsewhere become temporary arrays, `?:` becomes `if`/`else`, `&&`/`||` and `?:` whose skipped operand would have side effects become `if`s, operands evaluated earlier are computed first when the order could change a result, comparisons compare the elements (`a == b` becomes `(a[0] == b[0] && a[1] == b[1])`), functions return such values through an `out` parameter, and `const` arrays become variables initialized at the start of `main` with their constant elements folded where read. Refused: array returns from functions that compute derivatives, an `inout` argument that a later part of the call changes, and these values in `for` headers.
 
@@ -179,3 +194,5 @@ See [fragment test setup](tests/README.md) for the fixture corpus and real Skia 
 Output must already satisfy Skia's premultiplied color contract; no automatic color-space or alpha conversion occurs.
 
 No external dependencies are used. Future Git dependencies must be added as actual submodules, never copied nested repositories.
+
+The `transpile` boundary is `noexcept`. If memory allocation fails, the result is Failure; diagnostics are best effort and can be empty when allocating the diagnostic also fails. This holds wherever the standard containers can be constructed without allocating. With MSVC's iterator debugging (`_ITERATOR_DEBUG_LEVEL` 1 or 2, the Debug default), the `noexcept` constructors of `std::string` and `std::vector` allocate a debug proxy, and the standard library itself terminates the program when that allocation fails, inside the library or in the caller; no code outside the standard library can prevent it. The resilience test therefore compiles its own copy of the library with `_ITERATOR_DEBUG_LEVEL=0`, so its allocation sweep checks the library's handling of allocation failures in every configuration.

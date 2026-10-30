@@ -1,3 +1,4 @@
+#include <charconv>
 #include "sema.hpp"
 #include "language.hpp"
 #include <algorithm>
@@ -2362,7 +2363,8 @@ private:
             e->value=makeConstant(e->type,{Scalar::of(i)});
         } else {
             char text[64];
-            std::snprintf(text,sizeof text,"%.1f",v);
+            const auto formatted=std::to_chars(text,text+sizeof text,v,std::chars_format::fixed,1);
+            *formatted.ptr=0;
             e->text=text; e->floatValue=v;
             e->value=makeConstant(e->type,{Scalar::of(static_cast<float>(v))});
         }
@@ -2388,8 +2390,8 @@ private:
     }
     static std::string number(double v) {
         char text[64];
-        if(v==std::floor(v) && std::fabs(v)<1e15)std::snprintf(text,sizeof text,"%.0f",v);
-        else std::snprintf(text,sizeof text,"%g",v);
+        const auto formatted=std::to_chars(text,text+sizeof text,v,std::chars_format::general,6);
+        *formatted.ptr=0;
         return text;
     }
 
