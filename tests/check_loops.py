@@ -52,6 +52,18 @@ cases = [
  ('for_over_skia_limit_break', 'uniform float k;\n', 'void main(){int n=0;for(int i=0;i<200000;i++){n++;if(float(i)>=k)break;}color=vec4(float(n)/100000.,0.,0.,1.);}', {'k': 150000.0}, (1.50001,0,0,1)),
  ('for_over_skia_limit_continue', '', 'void main(){float s=0.;for(int i=0;i<120000;i++){if(i-2*(i/2)==1)continue;s+=1.;}color=vec4(s/100000.,0.,0.,1.);}', {}, (0.6,0,0,1)),
  ('while_over_skia_limit', '', 'void main(){int i=0;float s=0.;while(i<150000){i++;s+=1.;}color=vec4(s/100000.,float(i)/100000.,0.,1.);}', {}, (1.5,1.5,0,1)),
+ ('param_bound_two_calls', '', 'float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.1;return s;} void main(){color=vec4(f(3),f(5),0.,1.);}', {}, (0.3,0.5,0,1)),
+ ('param_bound_through_caller', '', 'float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.1;return s;} float g(int m){return f(m+1);} void main(){color=vec4(g(2),g(4),0.,1.);}', {}, (0.3,0.5,0,1)),
+ ('param_bound_from_loop_index', '', 'float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.01;return s;} void main(){float t=0.;for(int k=0;k<4;k++)t+=f(k);color=vec4(t,0.,0.,1.);}', {}, (0.06,0,0,1)),
+ ('param_clamped_in_body', '', 'float f(int n){n=min(n,4);float s=0.;for(int i=0;i<n;i++)s+=.1;return s;} void main(){color=vec4(f(2),f(9),0.,1.);}', {}, (0.2,0.4,0,1)),
+ ('local_bound_two_values', '', 'void main(){int n=3;if(gl_FragCoord.x>100.)n=6;float s=0.;for(int i=0;i<n;i++)s+=.1;color=vec4(s,0.,0.,1.);}', {}, (0.3,0,0,1)),
+ ('float_param_bound', '', 'float f(float m){float s=0.;for(float x=0.;x<m;x+=1.)s+=.1;return s;} void main(){color=vec4(f(2.),f(4.5),0.,1.);}', {}, (0.2,0.5,0,1)),
+ ('param_bound_annotated_uniform', 'uniform int u; // @minmax{0, 8}\n', 'float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.1;return s;} void main(){color=vec4(f(u),0.,0.,1.);}', {'u': 3}, (0.3,0,0,1)),
+ ('switch_default_middle', 'float run(int k){float r=0.;switch(k){case 1: r=r*10.+1.; default: r=r*10.+2.; case 2: r=r*10.+3.; break; case 3: r=r*10.+4.;}return r;}\n', 'void main(){color=vec4(run(0)+run(1)/1e3,run(2)+run(3)/1e3,run(4),1.);}', {}, (23.123,3.004,23,1)),
+ ('switch_default_first', 'float run(int k){float r=0.;switch(k){default: r=r*10.+2.; break; case 1: r=r*10.+1.; break; case 3: r=r*10.+4.;}return r;}\n', 'void main(){color=vec4(run(0)+run(1)/1e3,run(2)+run(3)/1e3,run(4),1.);}', {}, (2.001,2.004,2,1)),
+ ('switch_default_shared_label', 'float run(int k){float r=0.;switch(k){case 1: r=r*10.+1.; break; case 4: default: r=r*10.+2.; case 2: r=r*10.+3.; break;}return r;}\n', 'void main(){color=vec4(run(0)+run(1)/1e3,run(2)+run(3)/1e3,run(4),1.);}', {}, (23.001,3.023,23,1)),
+ ('switch_default_after_return', 'float run(int k){float r=0.;switch(k){case 1: return 7.; default: r=r*10.+2.; case 3: r=r*10.+4.;}return r;}\n', 'void main(){color=vec4(run(0)+run(1)/1e3,run(2)+run(3)/1e3,run(4),1.);}', {}, (24.007,24.004,24,1)),
+ ('switch_default_declaration', 'float run(int k){float r=0.;switch(k){case 1: r=r*10.+1.; break; default: float t=5.; r=r*10.+t; case 2: r=r*10.+3.;}return r;}\n', 'void main(){color=vec4(run(0)+run(1)/1e3,run(2)+run(3)/1e3,run(4),1.);}', {}, (53.001,3.053,53,1)),
 ]
 
 bad = 0

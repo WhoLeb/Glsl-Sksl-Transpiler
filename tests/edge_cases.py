@@ -303,11 +303,12 @@ def register(case, cases, root):
     C('arr_init_ternary', 'uniform float u; void main(){float a[2]=float[2](1.,2.);float b[2]=float[2](3.,4.);float c[2]=u>0.?a:b;color=vec4(c[0]);}')
     C('arr_compare', 'void main(){float a[2]=float[2](1.,2.);float b[2]=float[2](1.,2.);color=vec4(a==b?1.:0.);}')
     C('arr_assign_nested_in_expr', 'void main(){float a[2]=float[2](1.,2.);float b[2];float x=(b=a)[0];color=vec4(x);}')
-    C('arr_index_by_expr', 'void main(){float a[4]=float[4](1.,2.,3.,4.);int i=1;color=vec4(a[i+1]/4.);}', ok=False,
-      note='non-constant index expression outside a loop var')
+    C('arr_index_by_expr', 'void main(){float a[4]=float[4](1.,2.,3.,4.);int i=1;color=vec4(a[i+1]/4.);}',
+      note='i has the single value 1, so the index becomes the constant 2')
     C('arr_index_by_array_elem', 'void main(){int idx[2]=int[2](1,0);float a[2]=float[2](.25,.75);color=vec4(a[idx[0]]);}', ok=False,
       note='index is itself an array read')
-    C('arr_index_by_vec_comp', 'void main(){ivec2 i=ivec2(1,0);float a[2]=float[2](.25,.75);color=vec4(a[i.x]);}', ok=False)
+    C('arr_index_by_vec_comp', 'void main(){ivec2 i=ivec2(1,0);float a[2]=float[2](.25,.75);color=vec4(a[i.x]);}',
+      note='i is only initialized, from constants: its initializer replaces it in the index')
     C('struct_decl_and_var', 'struct S{float x;} s=S(.5);void main(){color=vec4(s.x);}')
     C('struct_local_decl', 'void main(){struct L{float v;};L l;l.v=.5;color=vec4(l.v);}')
     C('struct_ctor_nested', 'struct A{float x;};struct B{A a;vec2 v;}; void main(){B b=B(A(.5),vec2(.25));color=vec4(b.a.x,b.v,1.);}')
@@ -424,7 +425,8 @@ def register(case, cases, root):
     C('cf_for_init_outside', 'void main(){int i=0;for(;i<3;++i){}color=vec4(float(i)/3.);}', note='counter declared before the loop; accepted with a software.loop warning')
     C('cf_for_no_cond_break', 'void main(){float a=0.;for(;;){a+=.1;if(a>.3)break;}color=vec4(a);}', ok=False, target='reject')
     C('cf_for_no_increment', 'void main(){float a=0.;for(int i=0;i<4;){a+=.1;++i;}color=vec4(a);}')
-    C('cf_for_multi_init', 'void main(){float a=0.;for(int i=0,j=4;i<j;++i)a+=.1;color=vec4(a);}', ok=False, target='reject')
+    C('cf_for_multi_init', 'void main(){float a=0.;for(int i=0,j=4;i<j;++i)a+=.1;color=vec4(a);}',
+      note='j is only ever 4, so the counter i proves the number of iterations')
     C('cf_for_float_counter', 'void main(){float a=0.;for(float f=0.;f<1.;f+=.25)a+=f;color=vec4(a);}')
     C('cf_for_float_dynamic_end', 'void main(){float a=0.;for(float f=0.;f<size.x;f+=1.)a+=.1;color=vec4(a);}', ok=False, decl=UNI, target='reject')
     C('cf_for_counts_down', 'void main(){float a=0.;for(int i=4;i>0;--i)a+=.1;color=vec4(a);}')
@@ -468,8 +470,10 @@ def register(case, cases, root):
     C('cf_discard_in_dead_branch', 'void main(){if(false){discard;}color=vec4(1.);}')
     C('cf_switch_basic', 'void main(){float a=0.;switch(count){case 0:a=.1;break;case 1:a=.2;break;default:a=.3;}color=vec4(a);}', decl=UNI)
     C('cf_switch_constant_selector', 'void main(){float a=0.;switch(2){case 1:a=.1;break;case 2:a=.2;break;}color=vec4(a);}')
-    C('cf_switch_default_middle', 'void main(){float a=0.;switch(count){case 0:a+=.1;default:a+=.2;case 1:a+=.3;break;case 2:a+=.4;}color=vec4(a);}', ok=False, decl=UNI, target='reject',
-      note='default in the middle participates in fallthrough')
+    C('cf_switch_default_middle', 'void main(){float a=0.;switch(count){case 0:a+=.1;default:a+=.2;case 1:a+=.3;break;case 2:a+=.4;}color=vec4(a);}', decl=UNI,
+      note='default in the middle participates in fallthrough: it moves to the end with a copy of what it runs')
+    C('cf_switch_default_first_declares', 'void main(){float a=0.;switch(count){default:float t=.5;a=t;break;case 1:a=.1;}color=vec4(a);}', ok=False, decl=UNI,
+      note='a first default whose statements declare a variable cannot move: the declaration would come before the first label')
     C('cf_switch_only_default', 'void main(){float a=0.;switch(count){default:a=.5;}color=vec4(a);}', decl=UNI)
     C('cf_switch_empty', 'void main(){switch(count){}color=vec4(1.);}', decl=UNI)
     C('cf_switch_no_default_nomatch', 'void main(){float a=.5;switch(count){case 100:a=1.;break;}color=vec4(a);}', decl=UNI)
@@ -968,3 +972,15 @@ def register(case, cases, root):
       note='Skia rejects division by a constant zero; the divisor gets a run-time zero')
     C('skia_loop_over_limit', 'void main(){float s=0.;for(int i=0;i<100000;i++){s+=u;if(s>1.)break;}color=vec4(s);}', decl=U1,
       note='Skia allows fewer than 100000 iterations per loop: two nested loops')
+
+    # ------------------------------------------------------------------ U. ranges of locals and parameters
+    C('range_param_bound', 'float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.1;return s;}void main(){color=vec4(f(3),f(5),0.,1.);}',
+      note='the bound is a parameter: its range is that of the arguments of every call')
+    C('range_param_bound_from_uniform', 'uniform int u;float f(int n){float s=0.;for(int i=0;i<n;i++)s+=.1;return s;}void main(){color=vec4(f(u));}',
+      ok=False, note='a call passes an unannotated uniform, so the bound has no known range')
+    C('range_local_bound', 'void main(){int n=3;if(gl_FragCoord.x>100.)n=6;float s=0.;for(int i=0;i<n;i++)s+=.1;color=vec4(s);}',
+      note='a local bound ranges over every value assigned to it')
+    C('range_index_local_from_loop', 'void main(){float a[6]=float[6](.1,.2,.3,.4,.5,.6);float s=0.;for(int i=0;i<3;i++){int j=i*2+1;s+=a[j];}color=vec4(s);}',
+      note='a local initialized from the loop index is replaced by its initializer in the index')
+    C('range_index_reassigned', 'uniform int u;void main(){float a[3]=float[3](.1,.2,.3);int k=0;k+=u;color=vec4(a[k]);}',
+      ok=False, note='k changes by +=, so it has neither a known value nor a substitutable initializer')

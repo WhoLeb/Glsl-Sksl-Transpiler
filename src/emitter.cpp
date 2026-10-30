@@ -40,7 +40,9 @@ const std::set<std::string> kReserved=[] {
         "half","uint","short","ushort","shader","colorFilter","blender","sampler","sampler2D","samplerExternalOES",
         "sampler2DRect","texture2D","textureExternalOES","texture2DRect","readonlyTexture2D","writeonlyTexture2D",
         "subpassInput","subpassInputMS","isubpassInput","isubpassInputMS","usubpassInput","usubpassInputMS",
-        "atomicUint","atomic_uint","saturate","unpremul","toLinearSrgb","fromLinearSrgb"};
+        "atomicUint","atomic_uint","saturate","unpremul","toLinearSrgb","fromLinearSrgb",
+        // Skia's GPU backend appends '_S1_c0' to global names, which makes 'gl' the reserved 'gl_S1_c0'.
+        "gl"};
     const std::string n[]={"2","3","4"};
     for(const auto& a:n) {
         for(const char* v:{"half","float","int","uint","short","ushort","bool","uvec","hvec","dvec","fvec","dmat"})s.insert(v+a);
@@ -285,7 +287,7 @@ private:
         if(!kReserved.count(name) && !sema::isBuiltinFunctionName(name,320) && name.compare(0,3,"sk_")!=0)return name;
         const auto it=renamed.find(name);
         if(it!=renamed.end())return it->second;
-        return renamed[name]=fresh(name.compare(0,3,"sk_")==0?"_"+name:name+"_");
+        return renamed[name]=fresh(name.compare(0,3,"sk_")==0||name=="gl"?"_"+name:name+"_");   // "gl_" would be reserved too
     }
     std::string typeName(const Type& t) const {
         if(t.base==Type::Struct) {

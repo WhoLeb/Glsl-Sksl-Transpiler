@@ -202,7 +202,7 @@ void mustReportUnsupported() {
         {P+"uniform bool b; void main(){color=vec4(b?1.:0.);}","unsupported.bool-uniform"},
         {P+"layout(location=0) in vec2 uv; layout(location=1) in vec2 other; void main(){color=vec4(uv+other,0.,1.);}","unsupported.input"},
         {P+"void main(){color=vec4(isnan(1.)?1.:0.);}","unsupported.builtin"},
-        {P+"uniform int n; void main(){switch(n){default: break; case 1: break;} color=vec4(1.);}","unsupported.switch-default"},
+        {P+"uniform int n; void main(){switch(n){default: float t=1.; color=vec4(t); break; case 1: break;}}","unsupported.switch-default"},
         {P+"uniform int n; void main(){for(int i=0;i<2;++i){switch(n){case 0: continue;}} color=vec4(1.);}","unsupported.continue-in-switch"},
         {P+"void main(){color=vec4(gl_FragCoord.z);}","unsupported.frag-coord"},
         // Full source.

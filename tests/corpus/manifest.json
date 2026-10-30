@@ -2086,9 +2086,9 @@
   {
     "name": "arr_index_by_expr",
     "file": "arr_index_by_expr.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "note": "non-constant index expression outside a loop var",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "i has the single value 1, so the index becomes the constant 2",
     "source_valid": true
   },
   {
@@ -2102,8 +2102,9 @@
   {
     "name": "arr_index_by_vec_comp",
     "file": "arr_index_by_vec_comp.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "i is only initialized, from constants: its initializer replaces it in the index",
     "source_valid": true
   },
   {
@@ -2839,9 +2840,9 @@
   {
     "name": "cf_for_multi_init",
     "file": "cf_for_multi_init.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "target_expect": "reject",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "j is only ever 4, so the counter i proves the number of iterations",
     "source_valid": true
   },
   {
@@ -3143,10 +3144,17 @@
   {
     "name": "cf_switch_default_middle",
     "file": "cf_switch_default_middle.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "default in the middle participates in fallthrough: it moves to the end with a copy of what it runs",
+    "source_valid": true
+  },
+  {
+    "name": "cf_switch_default_first_declares",
+    "file": "cf_switch_default_first_declares.frag",
     "expect": "reject",
     "diagnostic": "Unsupported",
-    "note": "default in the middle participates in fallthrough",
-    "target_expect": "reject",
+    "note": "a first default whose statements declare a variable cannot move: the declaration would come before the first label",
     "source_valid": true
   },
   {
@@ -5843,6 +5851,46 @@
     "expect": "accept",
     "diagnostic": "",
     "note": "Skia allows fewer than 100000 iterations per loop: two nested loops",
+    "source_valid": true
+  },
+  {
+    "name": "range_param_bound",
+    "file": "range_param_bound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "the bound is a parameter: its range is that of the arguments of every call",
+    "source_valid": true
+  },
+  {
+    "name": "range_param_bound_from_uniform",
+    "file": "range_param_bound_from_uniform.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "a call passes an unannotated uniform, so the bound has no known range",
+    "source_valid": true
+  },
+  {
+    "name": "range_local_bound",
+    "file": "range_local_bound.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "a local bound ranges over every value assigned to it",
+    "source_valid": true
+  },
+  {
+    "name": "range_index_local_from_loop",
+    "file": "range_index_local_from_loop.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "note": "a local initialized from the loop index is replaced by its initializer in the index",
+    "source_valid": true
+  },
+  {
+    "name": "range_index_reassigned",
+    "file": "range_index_reassigned.frag",
+    "expect": "reject",
+    "diagnostic": "Unsupported",
+    "note": "k changes by +=, so it has neither a known value nor a substitutable initializer",
     "source_valid": true
   }
 ]

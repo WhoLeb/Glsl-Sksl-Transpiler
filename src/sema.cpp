@@ -90,6 +90,7 @@ public:
         annotateSamplers();
         chooseTextureCoordinate();
         finishProgram();
+        collectAssignments();
         // Also after errors, so every problem is reported at once.
         for(auto& d:unit.decls)targetDeclaration(*d);
         unusedIterationAnnotations();
@@ -1813,6 +1814,7 @@ private:
     // Recursion stays in these lean functions; the per-node checks, which build message strings,
     // live in out-of-line functions so deep nesting does not multiply their stack frames.
     void targetStatement(ast::Stmt& s) {
+        if(s.kind==StmtKind::Switch)defaultLast(s);
         statementIssues(s);
         switch(s.kind) {
         case StmtKind::Block: targetList(s.body); break;
@@ -1855,6 +1857,59 @@ private:
             break;
         case StmtKind::Return: if(s.expr)targetRoot(*s.expr); break;
         default: break;
+        }
+    }
+
+    // SkSL requires 'default' to be the last label of a switch. A default elsewhere moves to the
+    // end with a copy of what it runs: its statements and those it falls into, up to the first
+    // that leaves the switch, in a block of their own (for their declarations):
+    //   case 1: A; default: B; case 2: C; break; case 3: D;
+    //   case 1: A; B; case 2: C; break; case 3: D; break; default: { B; C; break; }
+    // The statements stay where they were for the labels that fall into them; when only the
+    // default reached them, they go. The last section gets a break, so it cannot fall into the
+    // default. The switch is left alone (and refused) when the copy is not possible.
+    GLSL_SKSL_NOINLINE void defaultLast(ast::Stmt& s) {
+        auto& b=s.body;
+        auto label=[](const ast::Stmt& x){return x.kind==StmtKind::Case||x.kind==StmtKind::Default;};
+        std::size_t d=0;
+        while(d<b.size() && b[d]->kind!=StmtKind::Default)++d;
+        if(d==b.size() || std::none_of(b.begin()+static_cast<std::ptrdiff_t>(d),b.end(),[](const ast::StmtPtr& x){return x->kind==StmtKind::Case;}))return;
+        auto block=std::make_unique<ast::Stmt>(StmtKind::Block,b[d]->loc);
+        for(std::size_t i=d+1;i<b.size();++i) {
+            if(label(*b[i]))continue;
+            auto copy=cloneStmt(*b[i]);
+            if(!copy)return;
+            block->body.push_back(std::move(copy));
+            if(leaves(*b[i]))break;
+        }
+        // Statements no other label reaches, which nothing falls into, go when they declare nothing.
+        std::size_t end=d+1;
+        while(end<b.size() && !label(*b[end]))++end;
+        const bool shared=(d>0 && label(*b[d-1])) || (d+1<b.size() && label(*b[d+1]));
+        const bool fallenInto=d>0 && !label(*b[d-1]) && !leaves(*b[d-1]);
+        const bool declares=std::any_of(b.begin()+static_cast<std::ptrdiff_t>(d+1),b.begin()+static_cast<std::ptrdiff_t>(end),
+            [](const ast::StmtPtr& x){return x->kind==StmtKind::Declaration;});
+        const bool alone=!shared && !fallenInto;
+        if(alone && declares && d==0)return;   // they would come before the first label
+        const Loc at=b[d]->loc;
+        ast::StmtPtr defaultLabel=std::move(b[d]);
+        const std::size_t stop=alone && !declares?end:d+1;   // the label, with its statements when they go
+        b.erase(b.begin()+static_cast<std::ptrdiff_t>(d),b.begin()+static_cast<std::ptrdiff_t>(stop));
+        if(!b.empty() && !label(*b.back()) && !leaves(*b.back()))b.push_back(std::make_unique<ast::Stmt>(StmtKind::Break,at));
+        b.push_back(std::move(defaultLabel));
+        if(block->body.empty())b.push_back(std::make_unique<ast::Stmt>(StmtKind::Break,at));
+        else b.push_back(std::move(block));
+        sink.warning(at,"software.switch","switch: SkSL requires 'default' to be the last label, so the default moves to the end with a copy of the "
+            "statements it runs (its own and those it falls into); the same statements run for every value","no change needed");
+        sink.hint("default:");
+    }
+    // Whether a statement always leaves the enclosing switch (or the function, or the loop).
+    static bool leaves(const ast::Stmt& x) {
+        switch(x.kind) {
+        case StmtKind::Break: case StmtKind::Return: case StmtKind::Continue: case StmtKind::Discard: return true;
+        case StmtKind::Block: return !x.body.empty() && leaves(*x.body.back());
+        case StmtKind::If: return x.otherwise && leaves(*x.then) && leaves(*x.otherwise);
+        default: return false;
         }
     }
 
@@ -2321,7 +2376,7 @@ private:
         // Where the counter starts.
         const ast::Expr* start=counterStart(s,v);
         if(!start){bound.why="the value "+name+" starts with is not known: it must be declared with an initializer right before the loop, unchanged until it";return std::nullopt;}
-        const auto first=range(*start,s), last=range(*limit,s);
+        const auto first=range(*start,&s), last=range(*limit,&s);
         if(!first || !std::isfinite(up?first->lo:first->hi)){bound.why="the start value "+quote(ast::toGlsl(*start))+" of "+name+" has no known range";return std::nullopt;}
         if(!last || !std::isfinite(up?last->hi:last->lo)) {
             std::vector<const Symbol*> missing;
@@ -2410,7 +2465,7 @@ private:
         } else {
             if(!isInt)return startClause+"; a float loop index needs a constant start";
             if(step!=1 && step!=-1)return startClause+"; a start that is not constant can only be replaced by a constant range when the index steps by 1";
-            const auto r=range(start,s);
+            const auto r=range(start,&s);
             const double limit=r?(up?r->lo:r->hi):0;
             if(!r || !std::isfinite(limit))return unknownRange(start,startClause,suggestion);
             first=limit;
@@ -2421,7 +2476,7 @@ private:
             if(!v)return startClause;
             last=*v;
         } else {
-            const auto r=range(bound,s);
+            const auto r=range(bound,&s);
             const double limit=r?(up?r->hi:r->lo):0;
             if(!r || !std::isfinite(limit))return unknownRange(bound,boundClause,suggestion);
             last=up?std::ceil(limit):std::floor(limit);
@@ -2506,6 +2561,116 @@ private:
     struct Range { double lo=0, hi=0; std::vector<const Symbol*> assumed; };
     std::map<const Symbol*,Range> indexRanges;   // loops accepted so far
 
+    // ------------------------------------------------------------------ values of variables
+    // Before any loop is rewritten, every value a variable can receive is collected: the
+    // initializer and the plain assignments of a local, and for an in parameter also the argument
+    // of every call. Its range is the union of their ranges, whatever order they run in, so a
+    // loop bounded by a parameter ('for (int i = 0; i < octaves; i++)' with fbm(p, 5) and
+    // fbm(q, 3)) or by a local gets a constant range. A uniform keeps no range unless annotated.
+    // Other writes (+=, ++, an out argument) leave the variable without a range. The index of a
+    // for loop of constant form ranges between its start and its bound.
+    struct Assigned {
+        std::vector<const ast::Expr*> values;
+        const ast::Expr* initializer=nullptr;    // the declaration's
+        bool unknown=false;
+        const ast::Expr* start=nullptr;          // loop index: start and bound
+        const ast::Expr* bound=nullptr;
+    };
+    std::map<const Symbol*,Assigned> assigned;
+    mutable std::map<const Symbol*,std::optional<Range>> variableRanges;   // nullopt while being computed
+
+    void collectAssignments() {
+        for(auto& d:unit.decls) {
+            if(d->kind==DeclKind::Variable) {
+                for(const auto& v:d->declarators)if(v.symbol && v.init){noteValue(v.symbol,*v.init,true);collect(*v.init);}
+            } else if(d->kind==DeclKind::Function && d->function && d->function->body)collect(*d->function->body);
+        }
+        // Computed now, while the expressions are as written.
+        for(const auto& a:assigned)variableRange(a.first);
+    }
+    void noteValue(const Symbol* s, const ast::Expr& value, bool initializer) {
+        if(!s)return;
+        Assigned& a=assigned[s];
+        a.values.push_back(&value);
+        if(initializer)a.initializer=&value;
+    }
+    void collect(const ast::Stmt& s) {
+        if(s.kind==StmtKind::For) {
+            if(const Symbol* index=constantFormIndex(s)) {
+                const ast::Declarator& d=s.init->decl->declarators.front();
+                Assigned& a=assigned[index];
+                a.start=d.init.get(); a.bound=s.expr->operands[1].get();
+                collect(*d.init); collect(*s.expr);
+                collect(*s.loop);
+                return;   // the step only moves the index
+            }
+        }
+        if(s.decl)for(const auto& v:s.decl->declarators)if(v.symbol && v.init){noteValue(v.symbol,*v.init,true);collect(*v.init);}
+        if(s.expr)collect(*s.expr);
+        if(s.step)collect(*s.step);
+        for(const auto& x:s.body)collect(*x);
+        for(const ast::Stmt* x:{s.then.get(),s.otherwise.get(),s.init.get(),s.loop.get()})if(x)collect(*x);
+    }
+    void collect(const ast::Expr& e) {
+        auto unknown=[&](const ast::Expr& target){if(const Symbol* t=root(target))assigned[t].unknown=true;};
+        if(e.kind==ExprKind::Assign) {
+            if(e.text=="=" && e.operands[0]->kind==ExprKind::Name)noteValue(e.operands[0]->symbol,*e.operands[1],false);
+            else unknown(*e.operands[0]);
+        } else if((e.kind==ExprKind::Unary||e.kind==ExprKind::Postfix) && (e.text=="++"||e.text=="--"))unknown(*e.operands[0]);
+        else if(e.kind==ExprKind::Call && e.function) {
+            const ast::Function* callee=e.function->definition;
+            for(std::size_t i=0;i<e.operands.size() && i<e.function->params.size();++i) {
+                if(e.function->params[i].direction!=Direction::In)unknown(*e.operands[i]);
+                else if(callee && i<callee->params.size())noteValue(callee->params[i].symbol,*e.operands[i],false);
+            }
+        }
+        for(const auto& o:e.operands)collect(*o);
+    }
+    // The index of 'for (T i = start; i OP bound; i STEP)' when the body leaves it alone.
+    const Symbol* constantFormIndex(const ast::Stmt& s) const {
+        static const std::set<std::string> relational={"<",">","<=",">="};
+        if(!s.init || s.init->kind!=StmtKind::Declaration || s.init->decl->declarators.size()!=1 || s.decl)return nullptr;
+        const ast::Declarator& d=s.init->decl->declarators.front();
+        const Symbol* i=d.symbol;
+        if(!i || !d.init || !i->type.isScalar() || (i->type.base!=Type::Int && i->type.base!=Type::Float))return nullptr;
+        const ast::Expr* c=s.expr.get();
+        if(!c || c->kind!=ExprKind::Binary || !relational.count(c->text) || c->operands[0]->kind!=ExprKind::Name || c->operands[0]->symbol!=i)return nullptr;
+        const ast::Expr* x=s.step.get();
+        const bool stepped=x && (((x->kind==ExprKind::Unary||x->kind==ExprKind::Postfix) && (x->text=="++"||x->text=="--")) ||
+            (x->kind==ExprKind::Assign && (x->text=="+="||x->text=="-=") && x->operands[1]->constant)) && x->operands[0]->kind==ExprKind::Name && x->operands[0]->symbol==i;
+        if(!stepped || writes(*s.loop,i) || writes(*c->operands[1],i))return nullptr;
+        return i;
+    }
+    Range variableRange(const Symbol* s) const {
+        constexpr double inf=std::numeric_limits<double>::infinity();
+        const Range unknown{-inf,inf,{}};
+        const auto memo=variableRanges.find(s);
+        if(memo!=variableRanges.end())return memo->second?*memo->second:unknown;   // a cycle: n = min(n, 8)
+        variableRanges[s]=std::nullopt;
+        const auto it=assigned.find(s);
+        std::optional<Range> r;
+        if(it!=assigned.end() && it->second.start) {
+            const auto a=range(*it->second.start,nullptr), b=range(*it->second.bound,nullptr);
+            if(a && b) {
+                r=Range{std::min(a->lo,b->lo),std::max(a->hi,b->hi),a->assumed};
+                r->assumed.insert(r->assumed.end(),b->assumed.begin(),b->assumed.end());
+            }
+        } else if(it!=assigned.end() && !it->second.unknown && !it->second.values.empty()) {
+            for(const ast::Expr* v:it->second.values) {
+                const auto x=range(*v,nullptr);
+                if(!x){r.reset();break;}
+                if(!r)r=*x;
+                else {
+                    r->lo=std::min(r->lo,x->lo); r->hi=std::max(r->hi,x->hi);
+                    r->assumed.insert(r->assumed.end(),x->assumed.begin(),x->assumed.end());
+                }
+            }
+        }
+        const Range result=r?*r:unknown;
+        variableRanges[s]=result;
+        return result;
+    }
+
     static std::optional<double> scalarValue(const ast::Expr& e) {
         if(!e.value || e.value->values.size()!=1)return std::nullopt;
         const Scalar& v=e.value->values[0];
@@ -2530,7 +2695,7 @@ private:
         }
         return r;
     }
-    GLSL_SKSL_NOINLINE std::optional<Range> range(const ast::Expr& e, const ast::Stmt& loop) const {
+    GLSL_SKSL_NOINLINE std::optional<Range> range(const ast::Expr& e, const ast::Stmt* loop) const {
         constexpr double inf=std::numeric_limits<double>::infinity();
         const Type& t=e.type;
         if(!t.isScalar() || (t.base!=Type::Int && t.base!=Type::Float))return std::nullopt;
@@ -2548,9 +2713,9 @@ private:
                 return s->hasRange?fit(Range{s->minimum,s->maximum,{s}},isInt):Range{-inf,inf,{}};
             const auto it=indexRanges.find(s);
             if(it!=indexRanges.end())return it->second;
-            if((s->storage==Storage::Local||s->storage==Storage::Parameter) && !writes(*loop.loop,s) && !(loop.step && writes(*loop.step,s)))
-                return Range{-inf,inf,{}};
-            return std::nullopt;
+            if(s->storage!=Storage::Local && s->storage!=Storage::Parameter)return std::nullopt;
+            if(loop && (writes(*loop->loop,s) || (loop->step && writes(*loop->step,s))))return std::nullopt;
+            return variableRange(s);
         }
         case ExprKind::Unary: {
             if(e.text!="-" && e.text!="+")return std::nullopt;
@@ -2601,6 +2766,9 @@ private:
                 // min(max(x, minVal), maxVal)
                 r.lo=std::min(std::max(args[0].lo,args[1].lo),args[2].lo);
                 r.hi=std::min(std::max(args[0].hi,args[1].hi),args[2].hi);
+            } else if((f=="floor"||f=="ceil"||f=="trunc"||f=="round"||f=="roundEven") && args.size()==1) {
+                // Monotonic, and within one of the argument.
+                r.lo=std::floor(args[0].lo); r.hi=std::ceil(args[0].hi);
             } else if(f=="abs" && args.size()==1) {
                 const Range& a=args[0];
                 if(isInt && a.lo<=INT_MIN){r.lo=-inf;r.hi=inf;}     // abs(INT_MIN) stays negative
@@ -2609,6 +2777,13 @@ private:
                 else {r.lo=0;r.hi=std::max(-a.lo,a.hi);}
             } else return std::nullopt;
             return fit(r,isInt);
+        }
+        case ExprKind::Ternary: {
+            const auto a=range(*e.operands[1],loop), b=range(*e.operands[2],loop);
+            if(!a||!b)return std::nullopt;
+            Range r{std::min(a->lo,b->lo),std::max(a->hi,b->hi),a->assumed};
+            join(r,*b);
+            return r;
         }
         case ExprKind::Constructor: {
             if(e.operands.size()!=1)return std::nullopt;
@@ -2684,8 +2859,8 @@ private:
         return false;
     }
 
-    // GLSL ES 1.00 Appendix A constant-index-expressions: constants, loop indices and
-    // expressions combining them without user function calls.
+    // GLSL ES 1.00 Appendix A constant-index-expressions as Skia accepts them: constants, loop
+    // indices and expressions combining them with operators, constructors and fields, without calls.
     bool constantIndex(const ast::Expr& e) const {
         if(e.constant)return true;
         switch(e.kind) {
@@ -2693,11 +2868,7 @@ private:
         case ExprKind::Unary: case ExprKind::Binary: case ExprKind::Ternary: case ExprKind::Constructor: case ExprKind::Field:
             for(const auto& o:e.operands)if(!constantIndex(*o))return false;
             return e.kind!=ExprKind::Unary || (e.text!="++" && e.text!="--");
-        case ExprKind::Call:
-            if(!e.function || !e.function->builtin)return false;
-            for(const auto& o:e.operands)if(!constantIndex(*o))return false;
-            return true;
-        default: return false;
+        default: return false;   // calls too: Skia rejects min(i, 2) in an index (measured)
         }
     }
 
@@ -2720,7 +2891,91 @@ private:
         if(fragCoordAccess(e))return;
         for(auto& o:e.operands)targetExpr(*o);
         if(e.constructed)for(auto& a:e.constructed->arrays)if(a.size)targetExpr(*a.size);
+        if(e.kind==ExprKind::Index && !constantIndex(*e.operands[1]) && !e.operands[0]->type.containsOpaque())constantIndexOf(e);
         expressionIssues(e);
+    }
+    // SkSL indices are constants and loop indices combined with operators (GLSL ES 1.00 Appendix
+    // A). Two other indices are written in that form, with the same value:
+    //  - an index with a single possible value (see variableRange) becomes that constant:
+    //    'int k = 2; a[k]' becomes 'a[2]';
+    //  - a local that is only initialized, from loop indices and constants, is replaced by its
+    //    initializer: 'int j = i * 2 + 1; a[j]' becomes 'a[(i * 2 + 1)]'. The loop indices keep
+    //    their value through an iteration, and the local cannot be declared outside their loops.
+    void constantIndexOf(ast::Expr& e) {
+        ast::Expr& index=*e.operands[1];
+        if(const auto r=range(index,nullptr); r && index.type.base==Type::Int && r->lo==r->hi && std::isfinite(r->lo) && r->assumed.empty() && !effects(index)) {
+            e.operands[1]=literal(index.type,r->lo,index.loc);
+            return;
+        }
+        auto substituted=substituteLocals(index,0);
+        if(substituted && constantIndex(*substituted) && !effects(*substituted))e.operands[1]=std::move(substituted);
+    }
+    // Copies of syntax tree nodes with their semantic annotations. Constructors keep their resolved
+    // type, not the type as written.
+    static ast::ExprPtr copyNode(const ast::Expr& e) {
+        auto copy=std::make_unique<ast::Expr>(e.kind,e.loc);
+        copy->text=e.text; copy->intValue=e.intValue; copy->floatValue=e.floatValue;
+        copy->parenthesized=e.parenthesized; copy->voidArgument=e.voidArgument; copy->height=e.height;
+        copy->type=e.type; copy->symbol=e.symbol; copy->function=e.function;
+        copy->constant=e.constant; copy->value=e.value; copy->swizzle=e.swizzle; copy->field=e.field;
+        return copy;
+    }
+    static ast::ExprPtr cloneExpr(const ast::Expr& e) {
+        auto copy=copyNode(e);
+        for(const auto& o:e.operands)copy->operands.push_back(cloneExpr(*o));
+        return copy;
+    }
+    static std::vector<ast::ArraySize> cloneSizes(const std::vector<ast::ArraySize>& sizes) {
+        std::vector<ast::ArraySize> out;
+        for(const auto& a:sizes)out.push_back({a.size?cloneExpr(*a.size):nullptr,a.loc});
+        return out;
+    }
+    // Statements of a function body; nullptr for a declaration other than of variables.
+    static ast::StmtPtr cloneStmt(const ast::Stmt& s) {
+        auto copy=std::make_unique<ast::Stmt>(s.kind,s.loc);
+        copy->scoped=s.scoped;
+        for(const auto& x:s.body) {
+            auto c=cloneStmt(*x);
+            if(!c)return nullptr;
+            copy->body.push_back(std::move(c));
+        }
+        if(s.decl) {
+            if(s.decl->kind!=DeclKind::Variable)return nullptr;
+            auto d=std::make_unique<ast::Decl>(DeclKind::Variable,s.decl->loc);
+            for(const auto& q:s.decl->qualifiers.list)d->qualifiers.list.push_back({q.word,{},q.loc});
+            d->type.name=s.decl->type.name; d->type.structDef=s.decl->type.structDef; d->type.loc=s.decl->type.loc;
+            d->type.arrays=cloneSizes(s.decl->type.arrays);
+            for(const auto& v:s.decl->declarators)
+                d->declarators.push_back({v.name,v.loc,cloneSizes(v.arrays),v.init?cloneExpr(*v.init):nullptr,v.symbol});
+            copy->decl=std::move(d);
+        }
+        if(s.expr)copy->expr=cloneExpr(*s.expr);
+        if(s.step)copy->step=cloneExpr(*s.step);
+        for(auto [from,to]:std::initializer_list<std::pair<const ast::StmtPtr*,ast::StmtPtr*>>{{&s.then,&copy->then},{&s.otherwise,&copy->otherwise},{&s.init,&copy->init},{&s.loop,&copy->loop}}) {
+            if(!*from)continue;
+            *to=cloneStmt(**from);
+            if(!*to)return nullptr;
+        }
+        return copy;
+    }
+    // A copy of `e` with every local that has only an initializer replaced by (a copy of) it.
+    ast::ExprPtr substituteLocals(const ast::Expr& e, int depth) const {
+        if(depth>16)return nullptr;
+        if(e.kind==ExprKind::Name && e.symbol && e.symbol->storage==Storage::Local &&
+           std::find(loopIndices.begin(),loopIndices.end(),e.symbol)==loopIndices.end() && !e.constant) {
+            const auto it=assigned.find(e.symbol);
+            if(it==assigned.end() || it->second.unknown || it->second.values.size()!=1 || !it->second.initializer)return nullptr;
+            auto value=substituteLocals(*it->second.initializer,depth+1);
+            if(value)value->parenthesized=true;
+            return value;
+        }
+        auto copy=copyNode(e);
+        for(const auto& o:e.operands) {
+            auto x=substituteLocals(*o,depth);
+            if(!x)return nullptr;
+            copy->operands.push_back(std::move(x));
+        }
+        return copy;
     }
     GLSL_SKSL_NOINLINE void expressionIssues(const ast::Expr& e) {
         if(!reportedMatrix && nonSquare(e.type)) {
