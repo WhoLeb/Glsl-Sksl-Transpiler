@@ -1,1 +1,2 @@
 skia-python==138.0
+moderngl==5.13.0

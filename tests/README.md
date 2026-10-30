@@ -86,3 +86,22 @@ where skslc.exe must sit in the same folder as Skia's `sksl_*.sksl` module files
 # Loop check (`check_loops.py`)
 
 `build\.venv-validation\Scripts\python.exe tests\check_loops.py --transpiler build\glsl-to-sksl.exe` renders `while`, `do-while` and `for` loops that the transpiler lowers to bounded iteration (counter proofs, `while(false)`, `@maxiter` annotations and `for` loops with a separate init, no increment or a step inside the body), including `continue` and conditions with side effects, and compares the rendered pixel with the GLSL result. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.
+
+# Online shaders (`fetch_online_shaders.py`, `check_online_shaders.py`)
+
+The unit tests and the corpus cover the cases someone thought of; real shaders find the rest. `python tests/fetch_online_shaders.py` downloads about 3300 single-pass fragment shaders into `build/online-shaders` (not part of the repository; the shaders keep their authors' licenses): the permissively licensed Shadertoy image shaders of the ShaderEval benchmark, a sample spread over a 45000-shader Shadertoy dump (both from Hugging Face), and the GLSL ES 1.00 examples of The Book of Shaders. `--limit N` takes at most N shaders from each source.
+
+```
+build\.venv-validation\Scripts\python.exe tests\check_online_shaders.py --transpiler build\glsl-to-sksl.exe --glslang build\glslang\StandAlone\glslang.exe --render
+```
+
+wraps each Shadertoy shader in Shadertoy's preamble (its uniforms, `iChannel0..3` as 2D, cube or 3D samplers, whichever glslang accepts, and a `main` that calls `mainImage` with `gl_FragCoord.xy`) and sorts it into one category: `ok`, `crash` or `timeout` (transpiler bugs), `transpile-error` (valid GLSL with conversion errors, counted per diagnostic code), `skia-reject` (converted SkSL that Skia rejects), `render-mismatch`, `reference-error` (the GL driver could not draw the GLSL) or `invalid-source` (glslang rejects the GLSL too, for example a shader that needs Shadertoy's Common tab; not counted). With `--render` the GPU's OpenGL driver draws the GLSL and Skia's GPU backend draws the SkSL on the same context, so both use the same `sin`, `pow` and so on, at 80x48 for two values of `iTime` with the same noise textures; a shader whose images differ in more than 1% of the pixels by more than 0.05 is a mismatch. Small mismatches remain possible where the GLSL itself is not deterministic, such as hardware derivatives (coarse on some GPUs) or chaotic loops. The summary goes to `build/online-results/summary.md`, every result to `report.json`, and the GLSL, SkSL, diagnostics and a GL | Skia | difference picture of each problem shader to `build/online-results/<category>/<id>/`. `--only ID,...` reruns chosen shaders.
+
+glslangValidator decides which shaders are valid GLSL. Without `--glslang` every error counts as a transpiler problem. Skia's checkout has its source; it builds in a few minutes:
+
+```
+cmake -S C:\dev\skia\third_party\externals\glslang -B build\glslang -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF -DENABLE_HLSL=OFF -DBUILD_EXTERNAL=OFF
+cmake --build build\glslang --target glslang-standalone
+```
+
+Requires skia-python and moderngl (an OpenGL 4.3 driver, for `--render`) from `requirements-validation.txt`.
