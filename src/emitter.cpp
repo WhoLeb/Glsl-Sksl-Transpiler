@@ -59,6 +59,16 @@ const std::set<std::string> kReserved=[] {
 
 const char* const kComponents="xyzw";
 
+// The target application passes the SkSL through regular expressions it cannot drop
+// (SkiaRuntimeEffect::GlslToSksl). 'texture\(\s*(\w+)\s*,\s*(\w+)\s*\)' becomes '$1.eval($2)' and
+// 'child\((.*?)\)' becomes 'child.eval($1)' for every 'uniform shader child;', both also at the end
+// of a longer name ('mytexture(a, b)', 'f_child(x)'). Names that are called therefore never end in
+// 'texture' or in the name of a child (Emitter::rewrittenCall), and a child whose name ends a
+// built-in function ('abs(x)' for a child 's') is renamed.
+bool endsWith(const std::string& name, const std::string& end) {
+    return name.size()>=end.size() && name.compare(name.size()-end.size(),end.size(),end)==0;
+}
+
 const Symbol* root(const Expr& e) {
     const Expr* x=&e;
     while(x->kind==ExprKind::Index||x->kind==ExprKind::Field)x=x->operands[0].get();
@@ -130,8 +140,9 @@ void intText(std::string& out, std::uint64_t raw) {
 
 class Emitter {
 public:
-    Emitter(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink)
-        :unit(unit),program(program),helpers([this](const std::string& builtin){return fresh("glsl_"+builtin);}),sink(sink) {
+    Emitter(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
+            const std::set<std::string>& renamedChildren)
+        :unit(unit),program(program),renamedChildren(renamedChildren),helpers([this](const std::string& builtin){return fresh("glsl_"+builtin);}),sink(sink) {
         // Names the shader uses keep their spelling; generated names avoid all of them.
         for(const auto& t:tokens)if(t.kind==TokenKind::Identifier)taken.insert(t.text);
         taken.insert(kReserved.begin(),kReserved.end());
@@ -143,6 +154,7 @@ public:
 
     std::string run(std::vector<SourceSpan>& origins) {
         if(!program.main)return {};
+        nameChildren();
         if(!program.writesFragColor && !program.writesFragData && program.outputs.empty())
             error(Loc{1,1},"output","shader without an output: it neither writes gl_FragColor nor declares an 'out vec4'",
                 "write the color to gl_FragColor (GLSL ES 1.00) or to an 'out vec4' variable");
@@ -174,6 +186,8 @@ public:
     }
 
     const std::map<std::string,std::string>& identifierMap() const { return renamed; }
+    // Names of the declared child shaders -> the GLSL sampler each comes from.
+    std::map<std::string,std::string> declaredChildren;
 private:
     struct FunctionInfo {
         std::vector<const sema::Function*> callees;     // user functions with a definition, in call order
@@ -189,6 +203,7 @@ private:
 
     const ast::TranslationUnit& unit;
     const sema::Program& program;
+    const std::set<std::string>& renamedChildren;           // samplers whose children would clash with a called name
     mutable std::set<std::string> taken;                    // identifiers of the shader and generated names
     mutable std::map<std::string,std::string> renamed;      // SkSL-reserved identifiers -> replacement
     mutable std::map<std::pair<std::string,int>,std::string> laneNames;
@@ -268,13 +283,20 @@ private:
     // A refused derivative stays a plain dFdx call in the SkSL returned with the error.
     bool refusedDerivative=false;
     // A generated name that no identifier of the shader and no other generated name uses.
-    std::string fresh(const std::string& base) const {
+    std::string fresh(const std::string& wanted) const {
+        const std::string base=rewrittenCall(wanted)?wanted+"_":wanted;
         std::string name=base;
-        for(int n=2;taken.count(name);++n)name=base+"_"+std::to_string(n);
+        for(int n=2;taken.count(name)||rewrittenCall(name);++n)name=base+"_"+std::to_string(n);
         taken.insert(name);
         return name;
     }
     std::string temp(){return fresh("tmp"+std::to_string(++temps));}
+    // The application would rewrite a call of this name (see endsWith).
+    bool rewrittenCall(const std::string& name) const {
+        if(endsWith(name,"texture"))return true;
+        for(const auto& c:declaredChildren)if(endsWith(name,c.first))return true;
+        return false;
+    }
     // Name of a variable in another pixel of the quad: x, x_L1, x_L2, x_L3.
     std::string laneName(const std::string& name, int lane) const {
         if(lane==0)return name;
@@ -284,7 +306,7 @@ private:
         return laneNames[key]=fresh(name+"_L"+std::to_string(lane));
     }
     std::string userName(const std::string& name) const {
-        if(!kReserved.count(name) && !sema::isBuiltinFunctionName(name,320) && name.compare(0,3,"sk_")!=0)return name;
+        if(!kReserved.count(name) && !sema::isBuiltinFunctionName(name,320) && name.compare(0,3,"sk_")!=0 && !renamedChildren.count(name))return name;
         const auto it=renamed.find(name);
         if(it!=renamed.end())return it->second;
         return renamed[name]=fresh(name.compare(0,3,"sk_")==0||name=="gl"?"_"+name:name+"_");   // "gl_" would be reserved too
@@ -335,8 +357,9 @@ private:
         return laneFunction(f)?laneName(name,lane):name;
     }
     // GLSL ES 1.00 lets shaders define round, inverse, abs(int), ...: names SkSL gives to its intrinsics.
+    // Also struct names, called as constructors.
     std::string userFunctionName(const std::string& name) const {
-        if(!sema::isBuiltinFunctionName(name,320))return userName(name);
+        if(!sema::isBuiltinFunctionName(name,320) && !rewrittenCall(name))return userName(name);
         const auto it=renamed.find(name);
         if(it!=renamed.end())return it->second;
         return renamed[name]=fresh(name+"_");
@@ -1136,6 +1159,21 @@ private:
         if(n.empty())n=fresh(elementName(u,element)+"_"+faces[face]);
         return n;
     }
+    // Child names come first: the names generated after them avoid ending in one.
+    void nameChildren() {
+        for(const Symbol* s:program.uniforms) {
+            if(!samplerType(s->type))continue;
+            const int count=s->type.isArray()?s->type.arrays[0]:1;
+            for(int i=0;i<count;++i) {
+                const int element=s->type.isArray()?i:-1;
+                if(kind(s->type)=="samplerCube")for(int face=0;face<6;++face)declaredChildren[faceName(s,element,face)]=s->name;
+                else declaredChildren[elementName(s,element)]=s->name;
+            }
+        }
+    }
+    void child(const std::string& name) {
+        line("uniform shader "+name+";");
+    }
     // Declarations of the child shaders and size uniforms that replace a sampler uniform.
     void samplerDeclarations(const Symbol& s) {
         const std::string k=kind(s.type);
@@ -1144,8 +1182,8 @@ private:
         const bool sized=sizedSamplers.count(&s)!=0;
         for(int i=0;i<count;++i) {
             const int element=s.type.isArray()?i:-1;
-            if(k=="samplerCube")for(int face=0;face<6;++face)line("uniform shader "+faceName(&s,element,face)+";");
-            else line("uniform shader "+elementName(&s,element)+";");
+            if(k=="samplerCube")for(int face=0;face<6;++face)child(faceName(&s,element,face));
+            else child(elementName(&s,element));
             if(sized)line("uniform "+std::string(softwareFiltered(s.type)?"float3 ":"float2 ")+sizeName(&s,element)+";");
         }
         const std::string children=count>1?"the child shaders "+quoted(elementName(&s,0))+" to "+quoted(elementName(&s,count-1)):"the child shader "+quoted(elementName(&s,first));
@@ -2372,7 +2410,7 @@ private:
         std::set<std::string> used;
         for(const auto& def:program.structs) {
             if(def.block)continue;
-            std::string name=def.name.empty()?fresh("S"):def.name.compare(0,3,"gl_")==0?fresh(def.name.substr(3)):userName(def.name);
+            std::string name=def.name.empty()?fresh("S"):def.name.compare(0,3,"gl_")==0?fresh(def.name.substr(3)):userFunctionName(def.name);
             if(used.count(name))name=fresh(name);   // structs of the same name in different scopes
             used.insert(name);
             structNames[&def]=name;
@@ -2528,9 +2566,21 @@ private:
 
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
     std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings) {
-    Emitter emitter(unit,program,tokens,sink);
-    auto source=emitter.run(origins);
-    bindings.assign(emitter.identifierMap().begin(),emitter.identifierMap().end());
-    return source;
+    // A child whose name ends a built-in function ('s' and 'abs(x)') would be rewritten by the
+    // application (see endsWith): its sampler is renamed and the SkSL generated again.
+    const DiagnosticSink start=sink;
+    std::set<std::string> renamedChildren;
+    for(;;) {
+        Emitter emitter(unit,program,tokens,sink,renamedChildren);
+        auto source=emitter.run(origins);
+        const auto before=renamedChildren.size();
+        for(const auto& [child,sampler]:emitter.declaredChildren)
+            if(source.find(child+"(")!=std::string::npos)renamedChildren.insert(sampler);
+        if(renamedChildren.size()==before) {
+            bindings.assign(emitter.identifierMap().begin(),emitter.identifierMap().end());
+            return source;
+        }
+        sink=start;
+    }
 }
 }

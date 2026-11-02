@@ -553,7 +553,9 @@ void textures() {
 
     Result e=transpile(P+"uniform sampler2D t; vec4 f(sampler2D s){return texture(s,vec2(.5));} void main(){color=f(t);}");
     CHECK(e.ok());
-    CHECK(contains(e.source,"f_t("));
+    // 'f_t(' would end in the child 't(', which the application rewrites to 't.eval('.
+    CHECK(contains(e.source,"f_t_("));
+    CHECK(!contains(e.source,"f_t("));
     CHECK(!contains(e.source,"sampler2D"));
 
     Result f=transpile(P+"uniform samplerCube t; void main(){color=vec4(1.);}");

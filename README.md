@@ -91,11 +91,13 @@ Every lookup function of GLSL ES 1.00 to 3.20 is replaced (`software.texture`), 
 - **Cube maps**: `uniform samplerCube sky;` becomes six children `sky_px`, `sky_nx`, `sky_py`, `sky_ny`, `sky_pz`, `sky_nz` (+X, -X, +Y, -Y, +Z, -Z), each created like a 2D texture and clamped at its edges. The shader chooses the face and the coordinates in it with the GLSL ES table. With linear filtering, texels within half a texel of a face edge differ from GL, which filters across the edge.
 - **3D and array textures**: one child holds the slices (or layers) stacked from top to bottom, slice k in rows k × height to (k + 1) × height − 1, created with the scale of the whole stack; `tSize` holds width, height and depth (or the number of layers). The shader reads texel centres and filters and wraps itself, as the GL sampler states in an annotation on the sampler: `uniform sampler3D vol; // @filter{linear} @wrap{repeat}` (`nearest` or `linear`; `repeat`, `clamp` or `mirror`; linear and repeat by default). A layer index is rounded and clamped as in GL.
 - **Arrays of samplers** become one child per element (`t_0`, `t_1`, ...); an index that is not constant selects among them.
-- **Samplers as function parameters**: SkSL functions cannot take child shaders, so the function gets a copy for each sampler it is called with (`f_t`, `f_t1`, ...); an element chosen at run time selects among the copies.
+- **Samplers as function parameters**: SkSL functions cannot take child shaders, so the function gets a copy for each sampler it is called with (`f_t_`, `f_t1`, ...; see below for the `_`); an element chosen at run time selects among the copies.
 
 `tests/check_textures.py` renders these lookups with Skia's CPU backend and compares them with GL's rules computed independently. They match exactly, up to float rounding (1e-6 for software filtering).
 
 Refused (`unsupported.*`): depth-comparison (`sampler2DShadow`, ...), integer (`isampler*`, `usampler*`), multisample, buffer and cube-array samplers, whose texels cannot come through a color child shader, and images.
+
+The target application passes the SkSL through regular expressions of its own (`SkiaRuntimeEffect::GlslToSksl`): `child(...)` becomes `child.eval(...)` for each `uniform shader child;`, `texture(a, b)` becomes `a.eval(b)`, and an `f` after a decimal number is dropped. They also match at the end of a longer name, so the SkSL avoids what they would change. Functions, structs and generated names that end in `texture` or in the name of a child shader get a trailing `_`: `blurtexture` becomes `blurtexture_`, and the copy of `textureSK(sampler2D)` for `inputTexture` is `textureSK_inputTexture_`. The child keeps its name, which the application binds. Only a child whose name ends a built-in function (a sampler `s` and `abs(x)`) is renamed itself (`s_`). Renamed GLSL names appear in `renamedIdentifiers`.
 
 ## Discard
 

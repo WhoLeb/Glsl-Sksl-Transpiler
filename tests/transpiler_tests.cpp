@@ -1,5 +1,31 @@
 #include "glsl_sksl/transpiler.hpp"
 #include <iostream>
+#include <regex>
+#include <vector>
+// The target application's SkiaRuntimeEffect::GlslToSksl, verbatim: regular expressions it runs
+// over the SkSL. The transpiler's output must come through unchanged.
+static std::string hostFixups(std::string glsl) {
+    auto fixup = [&glsl](const char* input, const char* replacement) {
+        glsl = std::regex_replace(glsl, std::regex(input), replacement);
+    };
+    std::vector<std::string> childNames;
+    std::regex functionRegex(R"(uniform\s+shader\s+(.*);)");
+    std::smatch match;
+    std::string::const_iterator searchStart(glsl.cbegin());
+    while (std::regex_search(searchStart, glsl.cend(), match, functionRegex)) {
+        childNames.emplace_back(match[1].str());
+        searchStart = match.suffix().first;
+    }
+    for (const auto& childName : childNames) {
+        std::string pattern(childName + R"(\((.*?)\))");
+        std::string replacement = childName + ".eval($1)";
+        fixup(pattern.c_str(), replacement.c_str());
+    }
+    fixup(R"(\buniform\s+sampler2D\b)", "uniform shader ");
+    fixup(R"(texture\(\s*(\w+)\s*,\s*(\w+)\s*\))", "$01.eval($02)");
+    fixup(R"((\d+\.\d+)f)", "$1");
+    return glsl;
+}
 int main(){
     int failures=0;
     auto check=[&](bool value){if(!value)++failures;};
@@ -34,6 +60,25 @@ int main(){
     check(!glsl_sksl::transpile("uniform isampler2D image; void main(){gl_FragColor=vec4(1);}").ok());
     check(!glsl_sksl::transpile("uniform usampler3D image; void main(){gl_FragColor=vec4(1);}").ok());
     check(!glsl_sksl::transpile("void main(){} void main(){}").ok());
+    {
+        // A child 's' would turn 'abs(' into 'ab.eval(', and 'blurtexture(a, b)' would become
+        // 'blura.eval(b)': such children and called names are renamed.
+        const auto host=glsl_sksl::transpile(
+            "#version 300 es\nprecision highp float;\nuniform sampler2D s;\nuniform samplerCube t;\nuniform vec2 iResolution;\nout vec4 o;\n"
+            "struct Mytexture { vec4 c; };\n"
+            "vec4 blurtexture(vec2 a, vec2 b) { return texture(s, a) + texture(s, b); }\n"
+            "vec4 cubetexture(samplerCube c, vec3 d) { return texture(c, d); }\n"
+            "void main() {\n    vec2 a = gl_FragCoord.xy, b = a * 2.0;\n"
+            "    Mytexture m = Mytexture(vec4(abs(a.x), cos(b.y), 0.0, 1.0));\n"
+            "    o = blurtexture(a, b) + cubetexture(t, vec3(a, 1.0)) + m.c + sqrt(vec4(dot(a, b)));\n}\n");
+        check(host.ok());
+        check(hostFixups(host.source)==host.source);
+        check(host.source.find("uniform shader s_;")!=std::string::npos);
+        check(host.source.find("texture(")==std::string::npos);
+        bool reported=false;
+        for(const auto& [from,to]:host.renamedIdentifiers)if(from=="s" && to=="s_")reported=true;
+        check(reported);
+    }
     if(failures)std::cerr<<failures<<" failed checks\n";
     return failures?1:0;
 }

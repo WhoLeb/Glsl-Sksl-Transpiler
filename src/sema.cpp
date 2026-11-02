@@ -1782,7 +1782,7 @@ private:
             if(childSampler(s.type))break;   // becomes child shaders
             if(s.type.containsOpaque())
                 unsupported(s.loc,"sampler",unsupportedSampler(what,s.type),
-                    "use a sampler2D, sampler3D, samplerCube or sampler2DArray, or declare 'uniform shader "+s.name+";' and sample it with "+s.name+".eval(coord) in the SkSL by hand");
+                    "use a sampler2D, sampler3D, samplerCube or sampler2DArray, or declare "+s.name+" as a child shader in the SkSL and sample it with "+s.name+".eval(coord) by hand");
             else if(s.type.contains(Type::Bool))
                 unsupported(s.loc,"bool-uniform",what+": SkSL runtime shaders cannot have bool uniforms","declare it as an int and test it with != 0");
             else if(s.type.base==Type::Struct && s.type.structDef && !s.type.structDef->block)
