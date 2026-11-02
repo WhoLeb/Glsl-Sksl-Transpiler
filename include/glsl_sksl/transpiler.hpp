@@ -24,6 +24,18 @@ struct Diagnostic {
     std::string sourceLine;      // text of the GLSL line at `line`
     std::string skslSourceLine;  // text of the SkSL line at `skslLine`
 };
+// What the application provides for a GLSL sampler uniform, by the SkSL names it has to set; one
+// per element of an array of samplers. The names may differ from the GLSL name (a generated size
+// uniform avoids every identifier of the shader), so look them up here rather than spelling them.
+struct Texture {
+    std::string sampler;         // the GLSL sampler uniform
+    int element=-1;              // the element of an array of samplers; -1 for a single sampler
+    std::string type;            // "sampler2D", "samplerCube", "sampler3D" or "sampler2DArray"
+    std::vector<std::string> children;  // its child shaders: one, or six faces for a cube map (+X, -X, +Y, -Y, +Z, -Z)
+    std::string sizeUniform;     // uniform to set to the size in texels: float2 width, height (of a face for a cube
+                                 // map), float3 width, height, depth or layers for 3D and array textures; empty
+                                 // when the shader does not need the size
+};
 struct Result {
     enum class State {
         Success,                 // `source` is a working Skia runtime shader; there may be warnings
@@ -32,6 +44,7 @@ struct Result {
     };
     State state=State::Failure;
     std::vector<std::pair<std::string,std::string>> renamedIdentifiers; // GLSL identifiers renamed in SkSL, including uniforms
+    std::vector<Texture> textures;         // the child shaders and size uniforms of each sampler, in declaration order
     std::string source;          // the generated SkSL; with errors it starts with one '#error' line per error
     std::vector<Diagnostic> diagnostics;   // every error and warning, sorted by GLSL position
     bool ok() const;             // true when no diagnostic is an error (state == Success)

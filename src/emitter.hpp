@@ -15,7 +15,8 @@ namespace glsl_sksl {
 // The GLSL source of a statement or declaration: where it starts and the last line it covers.
 struct SourceSpan { Loc start; unsigned endLine=0; };
 // `origins` receives, per line of the returned SkSL, the span of the statement or declaration it
-// was generated from (empty for generated code such as built-in replacements).
+// was generated from (empty for generated code such as built-in replacements). `textures`
+// receives the SkSL names that replace each sampler.
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
-    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings);
+    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings, std::vector<Texture>& textures);
 }

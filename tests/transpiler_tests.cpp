@@ -79,6 +79,28 @@ int main(){
         for(const auto& [from,to]:host.renamedIdentifiers)if(from=="s" && to=="s_")reported=true;
         check(reported);
     }
+    {
+        // Every sampler uniform is reported in Result::textures with its child shaders and size uniform.
+        auto tex=glsl_sksl::transpile("#version 300 es\nprecision highp float;\nuniform sampler2D inputTex;\nuniform vec2 inputTexSize;\nuniform samplerCube env;\nuniform sampler2D arr[2];\nout vec4 o;\n"
+            "void main() {\n    o = texture(inputTex, gl_FragCoord.xy / inputTexSize) + vec4(vec2(textureSize(inputTex, 0)), 0.0, 0.0)\n      + texture(env, vec3(1.0)) + texelFetch(arr[1], ivec2(0), 0);\n}\n");
+        check(tex.ok());
+        check(tex.textures.size()==4);
+        if(tex.textures.size()==4){
+            const auto& t0=tex.textures[0];
+            check(t0.sampler=="inputTex" && t0.element==-1 && t0.type=="sampler2D");
+            check(t0.children==std::vector<std::string>{"inputTex"} && t0.sizeUniform=="inputTexSize_2");
+            check(tex.source.find("uniform float2 inputTexSize_2;")!=std::string::npos);
+            check(tex.source.find("uniform float2 inputTexSize;")!=std::string::npos);
+            const auto& t1=tex.textures[1];
+            check(t1.sampler=="env" && t1.type=="samplerCube" && t1.children.size()==6 && t1.sizeUniform.empty());
+            for(int i=2;i<4;++i){
+                const auto& t=tex.textures[i];
+                check(t.sampler=="arr" && t.element==i-2 && t.type=="sampler2D" && t.children.size()==1 && !t.sizeUniform.empty());
+                if(t.children.size()==1)check(tex.source.find("uniform shader "+t.children[0]+";")!=std::string::npos);
+                check(tex.source.find("uniform float2 "+t.sizeUniform+";")!=std::string::npos);
+            }
+        }
+    }
     if(failures)std::cerr<<failures<<" failed checks\n";
     return failures?1:0;
 }

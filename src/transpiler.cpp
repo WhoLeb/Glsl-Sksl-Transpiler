@@ -137,7 +137,7 @@ Result transpile(const std::string& source) noexcept {
                     }
                 }
             }
-            r.source=emitSkSL(*parsed.unit,*program,parsed.tokens,sink,origins,r.renamedIdentifiers);
+            r.source=emitSkSL(*parsed.unit,*program,parsed.tokens,sink,origins,r.renamedIdentifiers,r.textures);
         }
         unsigned errors=0;
         std::vector<std::size_t> order(sink.list.size());
@@ -174,12 +174,14 @@ Result transpile(const std::string& source) noexcept {
         r.source.clear();
         r.diagnostics.clear();
         r.renamedIdentifiers.clear();
+        r.textures.clear();
         r.state=Result::State::Failure;
         try { r.diagnostics.push_back({0,0,std::string("Internal error: ")+e.what(),Severity::Error,"internal"}); } catch(...) {}
     } catch(...) {
         r.source.clear();
         r.diagnostics.clear();
         r.renamedIdentifiers.clear();
+        r.textures.clear();
         r.state=Result::State::Failure;
         try { r.diagnostics.push_back({0,0,"Internal error",Severity::Error,"internal"}); } catch(...) {}
     }

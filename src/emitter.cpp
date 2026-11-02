@@ -188,6 +188,8 @@ public:
     const std::map<std::string,std::string>& identifierMap() const { return renamed; }
     // Names of the declared child shaders -> the GLSL sampler each comes from.
     std::map<std::string,std::string> declaredChildren;
+    // The SkSL names that replace each sampler, for Result::textures.
+    std::vector<Texture> textures;
 private:
     struct FunctionInfo {
         std::vector<const sema::Function*> callees;     // user functions with a definition, in call order
@@ -1182,9 +1184,12 @@ private:
         const bool sized=sizedSamplers.count(&s)!=0;
         for(int i=0;i<count;++i) {
             const int element=s.type.isArray()?i:-1;
-            if(k=="samplerCube")for(int face=0;face<6;++face)child(faceName(&s,element,face));
-            else child(elementName(&s,element));
-            if(sized)line("uniform "+std::string(softwareFiltered(s.type)?"float3 ":"float2 ")+sizeName(&s,element)+";");
+            Texture t{s.name,element,k,{},sized?sizeName(&s,element):std::string()};
+            if(k=="samplerCube")for(int face=0;face<6;++face)t.children.push_back(faceName(&s,element,face));
+            else t.children.push_back(elementName(&s,element));
+            for(const auto& c:t.children)child(c);
+            if(sized)line("uniform "+std::string(softwareFiltered(s.type)?"float3 ":"float2 ")+t.sizeUniform+";");
+            textures.push_back(std::move(t));
         }
         const std::string children=count>1?"the child shaders "+quoted(elementName(&s,0))+" to "+quoted(elementName(&s,count-1)):"the child shader "+quoted(elementName(&s,first));
         const std::string size=sized?"; set "+quoted(sizeName(&s,first))+(count>1?" (one per element)":"")+" to the "+
@@ -2565,7 +2570,7 @@ private:
 }
 
 std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& program, const std::vector<Token>& tokens, DiagnosticSink& sink,
-    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings) {
+    std::vector<SourceSpan>& origins, std::vector<std::pair<std::string,std::string>>& bindings, std::vector<Texture>& textures) {
     // A child whose name ends a built-in function ('s' and 'abs(x)') would be rewritten by the
     // application (see endsWith): its sampler is renamed and the SkSL generated again.
     const DiagnosticSink start=sink;
@@ -2578,6 +2583,7 @@ std::string emitSkSL(const ast::TranslationUnit& unit, const sema::Program& prog
             if(source.find(child+"(")!=std::string::npos)renamedChildren.insert(sampler);
         if(renamedChildren.size()==before) {
             bindings.assign(emitter.identifierMap().begin(),emitter.identifierMap().end());
+            textures=std::move(emitter.textures);
             return source;
         }
         sink=start;
