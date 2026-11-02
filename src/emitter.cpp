@@ -968,16 +968,17 @@ private:
 
     // ------------------------------------------------------------------ textures
     // SkSL runtime shaders have no textures; they sample child shaders, which the application
-    // creates so that eval takes GLSL texture coordinates (0 to 1 across the image; see README):
+    // creates in texel coordinates (no local matrix; see README), so lookups scale GLSL texture
+    // coordinates (0 to 1 across the image) by the size of the texture:
     //  - sampler2D: one child; eval filters and wraps as the GL sampler does.
     //  - samplerCube: one child per face (_px, _nx, _py, _ny, _pz, _nz), chosen as GL chooses the
     //    face; eval filters within the face.
     //  - sampler3D, sampler2DArray: one child holding the slices or layers stacked from top to
     //    bottom. The shader reads texel centres, where any filter returns the texel itself, and
     //    filters and wraps by hand as the annotation of the sampler states.
-    // Lookups that need the size of the texture (textureSize, texelFetch, offsets, gathers, and
-    // every 3D and array lookup) read a generated size uniform. Mipmaps are not available: lookups
-    // with a level of detail, bias or gradients sample the base level.
+    // Every lookup except texelFetch of a 2D texture reads the size from a generated uniform.
+    // Mipmaps are not available: lookups with a level of detail, bias or gradients sample the
+    // base level.
     std::map<const sema::Function*,std::deque<Spec>> specs;     // copies of functions that take samplers
     const Spec* currentSpec=nullptr;
     std::set<const Symbol*> sizedSamplers;                       // samplers whose size uniform is used
@@ -1132,8 +1133,7 @@ private:
     static std::string kind(const Type& t){return t.opaque;}
     static bool softwareFiltered(const Type& t){return t.opaque=="sampler3D"||t.opaque=="sampler2DArray";}
     static bool needsSize(const Expr& call, const Type& sampler) {
-        const std::string& n=call.function->name;
-        return softwareFiltered(sampler) || n=="textureSize" || n.compare(0,10,"texelFetch")==0 || n.find("Offset")!=std::string::npos || n.compare(0,13,"textureGather")==0;
+        return sampler.opaque!="sampler2D" || call.function->name.compare(0,10,"texelFetch")!=0;
     }
     // Lookups that repeat parts of their computation: cube maps, 3D and array textures, gathers.
     bool complexLookup(const Expr& e) const {
@@ -1195,12 +1195,12 @@ private:
         const std::string size=sized?"; set "+quoted(sizeName(&s,first))+(count>1?" (one per element)":"")+" to the "+
             (softwareFiltered(s.type)?"width, height and "+std::string(k=="sampler3D"?"depth":"number of layers")+" of the texture":
              k=="samplerCube"?"width and height of a face":"width and height of the texture")+" in texels":"";
-        const std::string raw="SkImage::makeRawShader(tileX, tileY, sampling, &SkMatrix::Scale(1.0f / width, 1.0f / height))";
+        const std::string raw="SkImage::makeRawShader(tileX, tileY, sampling)";
         std::string message, suggestion;
         if(k=="sampler2D") {
-            message="sampler "+quoted(s.name)+" becomes "+children+", since SkSL runtime shaders have no textures; the shader samples it with the GLSL "
-                "texture coordinates (0 to 1)";
-            suggestion="create the child with "+raw+": the scale maps 0 to 1 onto the image, and a raw shader returns the texels unconverted, as GLSL "
+            message="sampler "+quoted(s.name)+" becomes "+children+", since SkSL runtime shaders have no textures; the shader samples it at the GLSL "
+                "texture coordinates (0 to 1) times the size, in texels";
+            suggestion="create the child with "+raw+", without a local matrix: a raw shader returns the texels unconverted, as GLSL "
                 "does; use the wrap and filter modes of the GL sampler, without mipmaps"+size;
         } else if(k=="samplerCube") {
             message="cube sampler "+quoted(s.name)+" becomes six child shaders, one per face ("+quoted(faceName(&s,first,0))+" for +X, then -X, +Y, "
@@ -1212,7 +1212,7 @@ private:
                 (k=="sampler3D"?"slices":"layers")+" stacked from top to bottom (slice or layer k in rows k * height to (k + 1) * height - 1), since SkSL "
                 "runtime shaders have no textures; the shader reads texel centres and filters ("+(s.nearest?"nearest":"linear")+") and wraps ("+s.wrap+
                 ") them itself";
-            suggestion="create the child from the stacked image with "+raw+" where height is the height of the whole stack; any filter mode works. "
+            suggestion="create the child from the stacked image with "+raw+"; any filter mode works. "
                 "State the GL sampler with '// @filter{nearest|linear} @wrap{repeat|clamp|mirror}' on the sampler (linear and repeat by default)"+size;
         }
         sink.warning(s.loc,"software.texture",message,suggestion);
@@ -1245,10 +1245,10 @@ private:
                 "    return r.z >= 0.0 ? float3(0.5 + 0.5 * r.x / a.z, 0.5 - 0.5 * r.y / a.z, 4.0) : float3(0.5 - 0.5 * r.x / a.z, 0.5 - 0.5 * r.y / a.z, 5.0);\n"
                 "}\n";
         else if(key=="gather")
-            // Centre of a texel of the 2x2 footprint of linear filtering at uv.
-            def="float2 "+name+"(float2 uv, float2 size, float2 corner) { return (floor(uv * size - 0.5) + corner + 0.5) / size; }\n";
+            // Centre of a texel of the 2x2 footprint of linear filtering at uv, in texels.
+            def="float2 "+name+"(float2 uv, float2 size, float2 corner) { return floor(uv * size - 0.5) + corner + 0.5; }\n";
         else if(key=="atlas")
-            def="float2 "+name+"(float3 i, float3 size) { return float2(i.x + 0.5, i.z * size.y + i.y + 0.5) / float2(size.x, size.y * size.z); }\n";
+            def="float2 "+name+"(float3 i, float3 size) { return float2(i.x + 0.5, i.z * size.y + i.y + 0.5); }\n";
         else if(key.compare(0,5,"wrap_")==0) {
             const std::string mode=key.substr(5,key.size()-7), T=key.back()=='2'?"float2":"float3";
             if(mode=="repeat")def=T+" "+name+"("+T+" i, "+T+" size) { return i - size * floor(i / size); }\n";
@@ -1324,20 +1324,21 @@ private:
             line(std::string(type)+" "+t+" = "+text+";");
             return t;
         };
-        const std::string P=gather||k!="sampler2D"?once(typeName(e.operands[1]->type).c_str(),arg(1)):arg(1);
+        // A plain 2D lookup multiplies the coordinate by the size.
+        const std::string P=gather||k!="sampler2D"?once(typeName(e.operands[1]->type).c_str(),arg(1)):
+            expr(*e.operands[1],lane,fetch||proj?2:14);
         const std::string level=ignoresLevel?"; the "+std::string(grad?"gradients are":lod?"level of detail is":"bias is")+" ignored, since child shaders have no "
             "mipmaps: it samples the base level, which matches GL for a texture without mipmaps":"";
         if(k=="sampler2D") {
             const std::string child=elementName(u,element);
             if(fetch) {
                 noteLookup(e,u,"texelFetch reads the texel at its centre, where any filter returns the texel itself"+level);
-                return "float4("+child+".eval((float2("+P+")"+(off.empty()?"":" + float2("+off+")")+" + 0.5) / "+S+"))";
+                return "float4("+child+".eval(float2("+P+")"+(off.empty()?"":" + float2("+off+")")+" + 0.5))";
             }
-            std::string uv=proj?textureHelper(e.operands[1]->type.rows==3?"proj3":"proj4")+"("+P+")":P;
+            const std::string uv=proj?textureHelper(e.operands[1]->type.rows==3?"proj3":"proj4")+"("+P+")":P;
             if(gather)return gatherText(e,lane,uv,S,off,[&](const std::string& c){return child+".eval("+c+")";},u);
-            if(!off.empty())uv=uv+" + float2("+off+") / "+S;
-            noteLookup(e,u,quoted(e)+" samples the child shader "+quoted(child)+" with "+quoted(child+".eval")+", since SkSL runtime shaders have no textures"+level);
-            return "float4("+child+".eval("+uv+"))";
+            noteLookup(e,u,quoted(e)+" samples the child shader "+quoted(child)+" with "+quoted(child+".eval")+" in texels, since SkSL runtime shaders have no textures"+level);
+            return "float4("+child+".eval("+uv+" * "+S+(off.empty()?"":" + float2("+off+")")+"))";
         }
         if(k=="samplerCube") {
             const std::string F=once("float3",textureHelper("cubeFace")+"("+P+")");
@@ -1356,7 +1357,7 @@ private:
                 return s+")";
             }
             noteLookup(e,u,quoted(e)+" samples the face child shader the direction selects, as GL selects the face"+level);
-            return faces([&](const std::string& f){return "float4("+f+".eval("+F+".xy))";});
+            return faces([&](const std::string& f){return "float4("+f+".eval("+F+".xy * "+S+"))";});
         }
         // sampler3D and sampler2DArray: one child with the slices or layers stacked vertically.
         const std::string child=elementName(u,element);

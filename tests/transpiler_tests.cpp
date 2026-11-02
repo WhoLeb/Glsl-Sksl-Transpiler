@@ -92,12 +92,14 @@ int main(){
             check(tex.source.find("uniform float2 inputTexSize_2;")!=std::string::npos);
             check(tex.source.find("uniform float2 inputTexSize;")!=std::string::npos);
             const auto& t1=tex.textures[1];
-            check(t1.sampler=="env" && t1.type=="samplerCube" && t1.children.size()==6 && t1.sizeUniform.empty());
+            check(t1.sampler=="env" && t1.type=="samplerCube" && t1.children.size()==6 && t1.sizeUniform=="envSize");
+            check(tex.source.find("uniform float2 envSize;")!=std::string::npos);
             for(int i=2;i<4;++i){
                 const auto& t=tex.textures[i];
-                check(t.sampler=="arr" && t.element==i-2 && t.type=="sampler2D" && t.children.size()==1 && !t.sizeUniform.empty());
+                // texelFetch alone is read in texels and needs no size uniform.
+                check(t.sampler=="arr" && t.element==i-2 && t.type=="sampler2D" && t.children.size()==1 && t.sizeUniform.empty());
                 if(t.children.size()==1)check(tex.source.find("uniform shader "+t.children[0]+";")!=std::string::npos);
-                check(tex.source.find("uniform float2 "+t.sizeUniform+";")!=std::string::npos);
+                check(tex.source.find("uniform float2 arr_")==std::string::npos);
             }
         }
     }

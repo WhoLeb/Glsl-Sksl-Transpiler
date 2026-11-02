@@ -24,7 +24,7 @@ def image(rgba):
 def child(rgba, tile=skia.TileMode.kRepeat, linear=False):
     h, w = rgba.shape[:2]
     sampling = skia.SamplingOptions(skia.FilterMode.kLinear if linear else skia.FilterMode.kNearest)
-    return image(rgba).makeRawShader(tile, tile, sampling, skia.Matrix.Scale(1.0 / w, 1.0 / h))
+    return image(rgba).makeRawShader(tile, tile, sampling)
 
 def render(sksl, w, h, uniforms={}, children={}, background=None, blend=skia.BlendMode.kSrc):
     effect = skia.RuntimeEffect.MakeForShader(sksl)
@@ -64,7 +64,7 @@ T = img.astype(np.float32) / 255.0  # T[j, i]
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = texelFetch(tex, ivec2(gl_FragCoord.xy), 0); }"
 for linear in (False, True):
-    check(f"texelFetch ({'linear' if linear else 'nearest'} child)", render(transpile(src), W2, H2, {"texSize": (W2, H2)}, {"tex": child(img, linear=linear)}), T)
+    check(f"texelFetch ({'linear' if linear else 'nearest'} child)", render(transpile(src), W2, H2, {}, {"tex": child(img, linear=linear)}), T)
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = textureOffset(tex, gl_FragCoord.xy / vec2(5.0, 3.0), ivec2(1, -1)); }"
 want = np.roll(np.roll(T, -1, axis=1), 1, axis=0)
@@ -74,7 +74,7 @@ src = H + "uniform sampler2D tex;\nvoid main(){ color = vec4(vec2(textureSize(te
 check("textureSize levels 0 and 1", render(transpile(src), 1, 1, {"texSize": (W2, H2)}, {"tex": child(img)})[0, 0], np.array([.5, .3, .2, .1], np.float32))
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = vec4(textureLod(tex, gl_FragCoord.xy / vec2(5.0, 3.0), 3.0).rgb, 1.0) + textureGrad(tex, vec2(0.5), vec2(1.0), vec2(1.0)) * 0.0; }"
-check("textureLod/Grad sample base level", render(transpile(src), W2, H2, {}, {"tex": child(img)}), T)
+check("textureLod/Grad sample base level", render(transpile(src), W2, H2, {"texSize": (W2, H2)}, {"tex": child(img)}), T)
 
 GW, GH = 13, 7
 for comp in range(4):
@@ -97,7 +97,7 @@ vec4 pick(sampler2D s, vec2 uv) { return texture(s, uv); }
 void main(){ vec2 uv = gl_FragCoord.xy / vec2(5.0, 3.0); color = texture(ts[which], uv) * 0.5 + pick(ts[1 - which], uv) * 0.0 + pick(ts[0], uv) * 0.5; }"""
 sk = transpile(src)
 for which, other in ((0, T), (1, img2.astype(np.float32) / 255)):
-    check(f"sampler array index {which} and sampler parameter", render(sk, W2, H2, {"which": which}, {"ts_0": child(img), "ts_1": child(img2)}), other * .5 + T * .5, 1e-6)
+    check(f"sampler array index {which} and sampler parameter", render(sk, W2, H2, {"which": which, "ts_0Size": (W2, H2), "ts_1Size": (W2, H2)}, {"ts_0": child(img), "ts_1": child(img2)}), other * .5 + T * .5, 1e-6)
 
 # ---------------------------------------------------------------- cube
 F = 4
@@ -117,7 +117,7 @@ CW, CH = 64, 32
 src = H + """uniform samplerCube sky;
 void main(){ float th = gl_FragCoord.x / 64.0 * 6.2831853, ph = gl_FragCoord.y / 32.0 * 3.1415926;
   color = texture(sky, vec3(sin(ph) * cos(th), cos(ph), sin(ph) * sin(th))); }"""
-got = render(transpile(src), CW, CH, {}, {f"sky_{n}": child(faces[i], skia.TileMode.kClamp) for i, n in enumerate(["px", "nx", "py", "ny", "pz", "nz"])})
+got = render(transpile(src), CW, CH, {"skySize": (F, F)}, {f"sky_{n}": child(faces[i], skia.TileMode.kClamp) for i, n in enumerate(["px", "nx", "py", "ny", "pz", "nz"])})
 want = np.zeros_like(got); mask = np.zeros(got.shape[:2], bool)
 for yy in range(CH):
     for xx in range(CW):

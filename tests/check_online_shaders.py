@@ -225,15 +225,13 @@ class Renderer:
             atlas = self.tex3d.reshape(16 * 16, 16, 4)  # slices stacked from top to bottom
             image = skia.Image.fromarray(np.ascontiguousarray(atlas), colorType=skia.kRGBA_8888_ColorType)
             return image.makeRawShader(skia.TileMode.kRepeat, skia.TileMode.kRepeat,
-                                       skia.SamplingOptions(skia.FilterMode.kNearest),
-                                       skia.Matrix.Scale(1 / 16, 1 / 256))
+                                       skia.SamplingOptions(skia.FilterMode.kNearest))
         data, tile = self.tex2d, skia.TileMode.kRepeat
         if m and m.group(2):
             data = self.cube[['px', 'nx', 'py', 'ny', 'pz', 'nz'].index(m.group(2))]
             tile = skia.TileMode.kClamp
         image = skia.Image.fromarray(np.ascontiguousarray(data), colorType=skia.kRGBA_8888_ColorType)
-        return image.makeRawShader(tile, tile, skia.SamplingOptions(skia.FilterMode.kLinear),
-                                   skia.Matrix.Scale(1 / TEXTURE, 1 / TEXTURE))
+        return image.makeRawShader(tile, tile, skia.SamplingOptions(skia.FilterMode.kLinear))
 
     @staticmethod
     def uniform_data(sksl, effect, values, samplers):
