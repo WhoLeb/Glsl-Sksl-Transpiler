@@ -156,8 +156,8 @@ public:
         if(!program.main)return {};
         nameChildren();
         if(!program.writesFragColor && !program.writesFragData && program.outputs.empty())
-            error(Loc{1,1},"output","shader without an output: it neither writes gl_FragColor nor declares an 'out vec4'",
-                "write the color to gl_FragColor (GLSL ES 1.00) or to an 'out vec4' variable");
+            error(Loc{1,1},"output","shader without an output",
+                "write gl_FragColor or an 'out vec4'");
         nameStructs();
         analyzeFunctions();
         {
@@ -672,7 +672,7 @@ private:
             break;
         case ExprKind::Assign:
             if(aggregate(e.type))
-                notExpressible(e,"assignment","SkSL cannot assign arrays (or structs containing arrays) as a whole");
+                notExpressible(e,"assignment","arrays cannot be assigned here");
             if(integerOperator(o,e,lane))break;
             expr(o,*e.operands[0],lane,15);
             o+=" "+e.text+" ";
@@ -681,7 +681,7 @@ private:
             break;
         case ExprKind::Ternary:
             if(aggregate(e.type))
-                notExpressible(e,"conditional","the result of ?: cannot be an array (or a struct containing arrays) in SkSL");
+                notExpressible(e,"conditional","?: cannot yield an array here");
             expr(o,*e.operands[0],lane,4);
             o+=" ? ";
             expr(o,*e.operands[1],lane,2);
@@ -691,7 +691,7 @@ private:
         case ExprKind::Call: call(o,e,lane); break;
         case ExprKind::Constructor:
             if(e.type.isArray())
-                notExpressible(e,"array constructor","SkSL has no array constructors");
+                notExpressible(e,"array constructor","not allowed here");
             constructor(o,e,lane);
             break;
         case ExprKind::Index:
@@ -713,7 +713,7 @@ private:
         case ExprKind::Method: length(o,e); break;
         case ExprKind::Comma:
             if(unexpressible(e))
-                notExpressible(e,"sequence","the operands of a comma expression cannot be arrays (or structs containing arrays) in SkSL");
+                notExpressible(e,"sequence","comma operands cannot be arrays here");
             expr(o,*e.operands[0],lane,1);
             o+=", ";
             expr(o,*e.operands[1],lane,2);
@@ -791,8 +791,7 @@ private:
         o+="(";
         expr(o,*e.operands[1],lane,binaryPrecedence("+"));
         o+=" + "+zeroName+")";
-        replaced(e,"operator","division by "+quoted(*e.operands[1])+", which is zero: Skia rejects a division by a constant zero, so the divisor gets a zero "
-            "known only at run time and the result is the infinity or NaN that GPUs give (GLSL leaves it unspecified)","no change needed",zeroName);
+        replaced(e,"operator","division by constant zero "+quoted(*e.operands[1])+" uses a run-time zero","",zeroName);
     }
     // Constant integer remainders and bit operations, which SkSL lacks, are replaced by their value.
     GLSL_SKSL_NOINLINE bool folded(std::string& o, const Expr& e) {
@@ -814,7 +813,7 @@ private:
     }
     GLSL_SKSL_NOINLINE void call(std::string& o, const Expr& e, int lane) {
         const sema::Function* f=e.function;
-        if(aggregate(e.type))notExpressible(e,"call","SkSL functions cannot return arrays (or structs containing arrays)");
+        if(aggregate(e.type))notExpressible(e,"call","array results are not allowed here");
         if(!f)o+=e.text;
         else if(isTextureCall(e)) {
             textureLookup(o,e,lane);
@@ -827,14 +826,12 @@ private:
             if(BuiltinHelpers::needed(*f) && e.value && constantText(o,*e.value))return;
             if(BuiltinHelpers::needed(*f)) {
                 const std::string helper=helpers.use(*f);
-                replaced(e,"builtin","built-in "+quoted(sema::signature(*f))+" is not available in SkSL runtime shaders; it is replaced by the generated function "+
-                    quoted(helper)+", which computes the result the GLSL ES specification defines","no change needed",helper+"(");
+                replaced(e,"builtin","built-in "+quoted(sema::signature(*f))+" replaced by "+quoted(helper),"",helper+"(");
                 o+=helper;
             } else o+=e.text;
         } else if(dynamicSamplerCall(e)) {
             if(f->returnType.base==Type::Void)
-                valueError(e,"sampler-argument","call "+quoted(e)+": it passes an element of an array of samplers chosen at run time to a void function, "
-                    "which the transpiler calls through a selection among copies of the function, and SkSL selects void calls only in a statement of their own",
+                valueError(e,"sampler-argument","call "+quoted(e)+": run-time sampler index to a void function",
                     "make the call a statement of its own");
             o+=dynamicCall(e,lane,samplerArgs(e));
             return;
@@ -886,8 +883,7 @@ private:
         return true;
     }
     void noteInteger(const Expr& e) {
-        replaced(e,"operator","operator "+quoted(e.text)+" is computed by a generated function: SkSL runtime shaders have no integer remainder or bit "
-            "operations, so it works on the 32-bit two's complement bits with integer arithmetic, with the result GLSL defines","no change needed",
+        replaced(e,"operator","operator "+quoted(e.text)+" computed in software","",
             e.text=="~"?"-1 - ":"glsl_");
     }
     std::map<std::string,std::string> integerNames;      // operation -> generated name
@@ -1090,8 +1086,7 @@ private:
         if(!call.function || !samplerParams(*call.function))return nullptr;
         const std::vector<SamplerRef> args=samplerArgs(call);
         if(dynamicSampler(args))
-            valueError(call,"sampler-argument","call "+quoted(call)+": it passes an element of an array of samplers chosen at run time to a function "
-                "that computes derivatives or returns an array, which the transpiler calls in statements of their own","pass an element chosen by a constant index");
+            valueError(call,"sampler-argument","call "+quoted(call)+": run-time sampler index to a function with derivatives or an array result","use a constant index");
         return findSpec(call.function,args);
     }
     // A call that passes an element of an array of samplers chosen at run time: a selection among
@@ -1191,29 +1186,21 @@ private:
             if(sized)line("uniform "+std::string(softwareFiltered(s.type)?"float3 ":"float2 ")+t.sizeUniform+";");
             textures.push_back(std::move(t));
         }
-        const std::string children=count>1?"the child shaders "+quoted(elementName(&s,0))+" to "+quoted(elementName(&s,count-1)):"the child shader "+quoted(elementName(&s,first));
-        const std::string size=sized?"; set "+quoted(sizeName(&s,first))+(count>1?" (one per element)":"")+" to the "+
-            (softwareFiltered(s.type)?"width, height and "+std::string(k=="sampler3D"?"depth":"number of layers")+" of the texture":
-             k=="samplerCube"?"width and height of a face":"width and height of the texture")+" in texels":"";
-        const std::string raw="SkImage::makeRawShader(tileX, tileY, sampling)";
+        const std::string children=count>1?"child shaders "+quoted(elementName(&s,0))+" to "+quoted(elementName(&s,count-1)):"child shader "+quoted(elementName(&s,first));
+        const std::string size=sized?"; set "+quoted(sizeName(&s,first))+(count>1?" (per element)":"")+" to "+
+            (k=="sampler3D"?"width, height, depth":k=="sampler2DArray"?"width, height, layers":k=="samplerCube"?"the face size":"the size")+" in texels":"";
+        const std::string raw="makeRawShader in texel coordinates (no local matrix)";
         std::string message, suggestion;
         if(k=="sampler2D") {
-            message="sampler "+quoted(s.name)+" becomes "+children+", since SkSL runtime shaders have no textures; the shader samples it at the GLSL "
-                "texture coordinates (0 to 1) times the size, in texels";
-            suggestion="create the child with "+raw+", without a local matrix: a raw shader returns the texels unconverted, as GLSL "
-                "does; use the wrap and filter modes of the GL sampler, without mipmaps"+size;
+            message="sampler "+quoted(s.name)+" becomes "+children;
+            suggestion="create it with "+raw+", no mipmaps"+size;
         } else if(k=="samplerCube") {
-            message="cube sampler "+quoted(s.name)+" becomes six child shaders, one per face ("+quoted(faceName(&s,first,0))+" for +X, then -X, +Y, "
-                "-Y, +Z, -Z), since SkSL runtime shaders have no textures; the shader chooses the face and the coordinates in it as GL does";
-            suggestion="create each face like a 2D texture with "+raw+", clamped at the edges; with linear filtering, texels within half a texel of "
-                "a face edge differ from GL, which filters across the edge"+size;
+            message="cube sampler "+quoted(s.name)+" becomes 6 face children ("+quoted(faceName(&s,first,0))+" first: +X, -X, +Y, -Y, +Z, -Z)";
+            suggestion="create each face with "+raw+", clamped"+size;
         } else {
-            message=std::string(k=="sampler3D"?"3D sampler ":"array sampler ")+quoted(s.name)+" becomes "+children+" holding the "+
-                (k=="sampler3D"?"slices":"layers")+" stacked from top to bottom (slice or layer k in rows k * height to (k + 1) * height - 1), since SkSL "
-                "runtime shaders have no textures; the shader reads texel centres and filters ("+(s.nearest?"nearest":"linear")+") and wraps ("+s.wrap+
-                ") them itself";
-            suggestion="create the child from the stacked image with "+raw+"; any filter mode works. "
-                "State the GL sampler with '// @filter{nearest|linear} @wrap{repeat|clamp|mirror}' on the sampler (linear and repeat by default)"+size;
+            message=std::string(k=="sampler3D"?"3D sampler ":"array sampler ")+quoted(s.name)+" becomes "+children+" ("+
+                (k=="sampler3D"?"slices":"layers")+" stacked; "+(s.nearest?"nearest":"linear")+", "+s.wrap+")";
+            suggestion="create it with "+raw+" (h = stack height); state GL filter and wrap with @filter and @wrap"+size;
         }
         sink.warning(s.loc,"software.texture",message,suggestion);
         sink.hint("uniform shader ");
@@ -1313,7 +1300,7 @@ private:
         if(size) {
             const std::string T=softwareFiltered(u->type)?"int3":"int2";
             const Expr& level=*e.operands[1];
-            noteLookup(e,u,"textureSize returns the size of the texture from the uniform "+quoted(S)+", which the application sets");
+            noteLookup(e,"textureSize reads uniform "+quoted(S));
             if(level.value && level.value->values[0].i==0)return T+"("+S+")";
             return T+"(max(floor("+S+" / exp2(float("+arg(1)+"))), 1.0))";
         }
@@ -1327,17 +1314,16 @@ private:
         // A plain 2D lookup multiplies the coordinate by the size.
         const std::string P=gather||k!="sampler2D"?once(typeName(e.operands[1]->type).c_str(),arg(1)):
             expr(*e.operands[1],lane,fetch||proj?2:14);
-        const std::string level=ignoresLevel?"; the "+std::string(grad?"gradients are":lod?"level of detail is":"bias is")+" ignored, since child shaders have no "
-            "mipmaps: it samples the base level, which matches GL for a texture without mipmaps":"";
+        const std::string level=ignoresLevel?"; "+std::string(grad?"gradients":lod?"LOD":"bias")+" ignored (no mipmaps)":"";
         if(k=="sampler2D") {
             const std::string child=elementName(u,element);
             if(fetch) {
-                noteLookup(e,u,"texelFetch reads the texel at its centre, where any filter returns the texel itself"+level);
+                noteLookup(e,"texelFetch reads the texel centre"+level);
                 return "float4("+child+".eval(float2("+P+")"+(off.empty()?"":" + float2("+off+")")+" + 0.5))";
             }
             const std::string uv=proj?textureHelper(e.operands[1]->type.rows==3?"proj3":"proj4")+"("+P+")":P;
-            if(gather)return gatherText(e,lane,uv,S,off,[&](const std::string& c){return child+".eval("+c+")";},u);
-            noteLookup(e,u,quoted(e)+" samples the child shader "+quoted(child)+" with "+quoted(child+".eval")+" in texels, since SkSL runtime shaders have no textures"+level);
+            if(gather)return gatherText(e,lane,uv,S,off,[&](const std::string& c){return child+".eval("+c+")";});
+            noteLookup(e,quoted(e)+" becomes "+quoted(child+".eval")+" in texels"+level);
             return "float4("+child+".eval("+uv+" * "+S+(off.empty()?"":" + float2("+off+")")+"))";
         }
         if(k=="samplerCube") {
@@ -1348,7 +1334,7 @@ private:
                 return s+sample(faceName(u,element,5))+")";
             };
             if(gather) {
-                noteLookup(e,u,"textureGather reads the four texels of the footprint in the face the direction selects, clamped at its edges");
+                noteLookup(e,"textureGather reads 4 texels of the selected face");
                 const char c=kComponents[component(e)];
                 static const char* const corners[4]={"float2(0.0, 1.0)","float2(1.0, 1.0)","float2(1.0, 0.0)","float2(0.0, 0.0)"};
                 std::string s="float4(";
@@ -1356,23 +1342,22 @@ private:
                     return f+".eval("+textureHelper("gather")+"("+F+".xy, "+S+", "+corners[i]+"))."+c;});
                 return s+")";
             }
-            noteLookup(e,u,quoted(e)+" samples the face child shader the direction selects, as GL selects the face"+level);
+            noteLookup(e,quoted(e)+" samples the selected face child"+level);
             return faces([&](const std::string& f){return "float4("+f+".eval("+F+".xy * "+S+"))";});
         }
         // sampler3D and sampler2DArray: one child with the slices or layers stacked vertically.
         const std::string child=elementName(u,element);
         const bool layers=k=="sampler2DArray";
         if(fetch) {
-            noteLookup(e,u,"texelFetch reads the texel at its centre in the stacked child shader"+level);
+            noteLookup(e,"texelFetch reads the texel centre"+level);
             return "float4("+child+".eval("+textureHelper("atlas")+"(float3("+P+(off.empty()?"":layers?" + int3("+off+", 0)":" + "+off)+"), "+S+")))";
         }
         if(gather) {
             const std::string texel=textureHelper("texelLayer_"+u->wrap);
-            return gatherText(e,lane,"("+P+").xy",S+".xy",off,[&](const std::string& c){return child+".eval("+c+")";},u,
+            return gatherText(e,lane,"("+P+").xy",S+".xy",off,[&](const std::string& c){return child+".eval("+c+")";},
                 [&](const std::string& base){return texel+"("+base+", ("+P+").z, "+S+")";});
         }
-        noteLookup(e,u,quoted(e)+" reads texel centres of the child shader "+quoted(child)+" and filters ("+(u->nearest?"nearest":"linear")+") and wraps ("+u->wrap+
-            ") them in the shader"+level);
+        noteLookup(e,quoted(e)+" filters and wraps "+quoted(child)+" in the shader"+level);
         if(layers) {
             const std::string texel=textureHelper("texelLayer_"+u->wrap), uv="("+P+").xy", layer="("+P+").z", o2=off.empty()?"":" + float2("+off+")";
             if(u->nearest)return "float4("+child+".eval("+texel+"(floor("+uv+" * "+S+".xy)"+o2+", "+layer+", "+S+")))";
@@ -1398,9 +1383,9 @@ private:
     // textureGather: component c of the four texels of the footprint of linear filtering, in the
     // order (i0, j1), (i1, j1), (i1, j0), (i0, j0).
     std::string gatherText(const Expr& e, int lane, const std::string& uv, const std::string& S, const std::string& off,
-        const std::function<std::string(const std::string&)>& sample, const Symbol* u,
+        const std::function<std::string(const std::string&)>& sample,
         const std::function<std::string(const std::string&)>& texel={}) {
-        noteLookup(e,u,"textureGather reads the four texels of the footprint at their centres");
+        noteLookup(e,"textureGather reads 4 texel centres");
         const bool offsets=e.function->name=="textureGatherOffsets";
         const char c=kComponents[component(e)];
         static const char* const corners[4]={"float2(0.0, 1.0)","float2(1.0, 1.0)","float2(1.0, 0.0)","float2(0.0, 0.0)"};
@@ -1414,8 +1399,8 @@ private:
         }
         return s+")";
     }
-    void noteLookup(const Expr& e, const Symbol* u, const std::string& message) {
-        replaced(e,"texture",message,sizedSamplers.count(u)?"set the size uniform of "+quoted(u->name)+" (see its declaration)":"no change needed",
+    void noteLookup(const Expr& e, const std::string& message) {
+        replaced(e,"texture",message,"",
             ".eval(");
     }
     GLSL_SKSL_NOINLINE void field(std::string& o, const Expr& e, int lane) {
@@ -1452,9 +1437,8 @@ private:
     }
     // A value the transpiler would compute in statements before its own, where there are none.
     void notExpressible(const Expr& e, const std::string& what, const std::string& why) {
-        valueError(e,"array-value",what+" "+quoted(e)+": "+why+", and the transpiler computes such values in statements before the one that uses them, "
-            "which this position does not allow (a for loop header, a global initializer or an argument of a function that computes derivatives)",
-            "compute the value into a variable before this statement and use the variable");
+        valueError(e,"array-value",what+" "+quoted(e)+": "+why,
+            "compute it into a variable first");
     }
     // Elements of constant arrays are written as their values: the arrays themselves become
     // variables, which global initializers cannot read.
@@ -1616,9 +1600,8 @@ private:
             // The target of an assignment or out argument is written after everything is evaluated.
             if(assignedOperand(e,i) || !conflict(before,after))prepare(o,lane);
             else if(readWrittenOperand(e,i))
-                valueError(o,"evaluation-order",quoted(o)+" in "+quoted(e)+": the transpiler must compute part of the expression before the statement, "
-                    "and that part changes "+quoted(o)+", which the expression reads first",
-                    "compute the later part in a separate statement before this one");
+                valueError(o,"evaluation-order",quoted(o)+" in "+quoted(e)+": read before a part that changes it",
+                    "split the statement");
             else spill(o,lane);
         }
         if(spilledOperand(e,last,lane))spill(*e.operands[last],lane);
@@ -1840,21 +1823,18 @@ private:
         if(!s || !notedBuiltins.insert(s).second)return;
         const std::string& n=s->name;
         if(n=="gl_FragData")
-            sink.warning(e.loc,"software.output","gl_FragData[0] is the color the SkSL main returns: GLSL ES 1.00 has gl_MaxDrawBuffers = 1, and SkSL runtime "
-                "shaders return a single color","no change needed");
+            sink.warning(e.loc,"software.output","gl_FragData[0] is the returned color","");
         else if(n=="gl_FrontFacing")
-            sink.warning(e.loc,"software.front-facing","gl_FrontFacing is true: Skia draws have no back faces, so the shader runs as for a front-facing primitive",
-                "no change needed when the GL draw was front-facing; otherwise replace gl_FrontFacing by false");
+            sink.warning(e.loc,"software.front-facing","gl_FrontFacing is always true",
+                "");
         else if(n=="gl_PointCoord")
-            sink.warning(e.loc,"software.point-coord","gl_PointCoord is computed as if the drawn area were the point sprite: x from 0 to 1 left to right, y from 0 at the "
-                "top to 1 at the bottom of the GL window, from the coordinate and "+quoted(resolution),
-                "set "+quoted(resolution.substr(0,resolution.find('.')))+" to the width and height of the drawn area, and draw with the y flip that gl_FragCoord needs (see README)");
+            sink.warning(e.loc,"software.point-coord","gl_PointCoord treats the drawn area as the point sprite",
+                "set "+quoted(resolution.substr(0,resolution.find('.')))+" to the drawn area size");
         else if(n=="gl_DepthRange")
-            sink.warning(e.loc,"software.depth-range","gl_DepthRange has its default values near = 0, far = 1, diff = 1: SkSL runtime shaders have no depth range",
-                "no change needed when the GL application keeps the default glDepthRangef(0, 1)");
+            sink.warning(e.loc,"software.depth-range","gl_DepthRange is the default (0, 1)",
+                "");
         else if(s->value)
-            sink.warning(e.loc,"software.constant",n+" is "+std::to_string(s->value->values[0].i)+", the minimum the GLSL ES specification allows: the "
-                "value of the original device is not known","no change needed unless the shader relies on a larger device limit");
+            sink.warning(e.loc,"software.constant",n+" is "+std::to_string(s->value->values[0].i)+" (the GLSL ES minimum)","");
         else return;
         sink.hint(n=="gl_FragData"?colorName:n=="gl_PointCoord"?resolution.substr(0,resolution.find('.')):n=="gl_FrontFacing"?"true":std::string());
     }
@@ -1867,9 +1847,8 @@ private:
         if(lane!=0)return;
         const std::string text=current==program.main?"return half4(0.0);":discardedName+" = true;";
         if(notedDiscards.insert(&s).second) {
-            sink.warning(s.loc,"software.discard","discard: SkSL runtime shaders cannot discard pixels, so the shader returns transparent black (0, 0, 0, 0) "
-                "instead, which leaves the destination unchanged under source-over blending (Skia's default), as discard does",
-                "draw with source-over blending (SkBlendMode::kSrcOver); with other blend modes the pixel is not left unchanged");
+            sink.warning(s.loc,"software.discard","discard returns transparent black",
+                "draw with source-over blending");
             sink.hint(text);
         }
         line(text);
@@ -1901,8 +1880,7 @@ private:
         if(f.returnType.base==Type::Void || returnsAggregate(f) || terminates(*f.definition->body,false))return;
         const std::string text="return "+zeroValue(f.returnType)+";";
         if(!terminates(*f.definition->body,true) && notedFallOffs.insert(&f).second) {
-            sink.warning(f.definition->loc,"software.missing-return","function "+quotedName(f)+" can reach its end without returning a value, which GLSL leaves "
-                "undefined and SkSL rejects; it returns zero there","add a return statement at the end of "+quotedName(f));
+            sink.warning(f.definition->loc,"software.missing-return","function "+quotedName(f)+" can end without a return; returns zero there","add a return at the end");
             sink.hint(text);
         }
         line(text);
@@ -2129,15 +2107,15 @@ private:
             if(conflict(a,rest))movable=false;
             if(!movable) {
                 ok=false;
-                derivativeError(*n,"it cannot be computed apart from the side effects of "+quoted(e),
-                    "compute "+quoted(*n)+" in a separate statement before this one");
+                derivativeError(*n,"entangled with side effects of "+quoted(e),
+                    "compute it in a statement before this one");
             }
         }
         if(ok)for(const Expr* n:nodes)hoistIn(*n);
     }
     static std::string quoted(const Expr& e){return "'"+ast::toGlsl(e)+"'";}
     GLSL_SKSL_NOINLINE void derivativeError(const Expr& n, const std::string& why, const std::string& suggestion) {
-        const std::string what=isDerivativeCall(n)?"derivative "+quoted(n):"call "+quoted(n)+" (the function computes derivatives)";
+        const std::string what=isDerivativeCall(n)?"derivative "+quoted(n):"call "+quoted(n)+" (uses derivatives)";
         error(n.loc,"derivative",what+": "+why,suggestion);
     }
     void hoistIn(const Expr& e) {
@@ -2178,9 +2156,8 @@ private:
         };
         const std::string& name=e.function->name;
         const std::string result=temp();
-        replaced(e,"derivative",quoted(e)+" is computed in software: SkSL runtime shaders have no derivatives, so the code that leads to it "
-            "is also evaluated for the other three pixels of the 2x2 quad, and the difference is taken the way GPUs compute fine derivatives",
-            "no change needed; the code before the last derivative runs up to four times per pixel, so an analytic derivative is faster where one is known",
+        replaced(e,"derivative",quoted(e)+" computed in software (2x2 quad)",
+            "",
             " "+result+" = ");
         if(name=="dFdx")dx(result);
         else if(name=="dFdy")dy(result);
@@ -2223,9 +2200,8 @@ private:
     void divergent(const Stmt& s) {
         const StmtInfo i=info(s);
         if(i.returns||i.jumps) {
-            error(s.loc,"derivative-control","early exit (return, break or continue) under a condition that depends on the pixel position, before a derivative: "
-                "GLSL leaves derivatives undefined once the pixels of a 2x2 quad take different paths",
-                "compute the derivatives before this statement, or move the return, break or continue after the last derivative");
+            error(s.loc,"derivative-control","early exit under a per-pixel condition before a derivative",
+                "compute the derivatives before it");
             return;
         }
         std::vector<const Expr*> nodes;
@@ -2241,9 +2217,8 @@ private:
             for(const auto& o:n->operands)if(sideEffects(*o))movable=false;
             if(!movable) {
                 ok=false;
-                derivativeError(*n,"it is under a condition that depends on the pixel position, and it "+std::string(inLoop?"is inside a loop there":"reads values the condition's branches change")+
-                    "; GLSL leaves derivatives undefined when the pixels of a 2x2 quad take different paths",
-                    "compute "+quoted(*n)+" before the "+(s.kind==StmtKind::If?"if":"switch")+" and use the result inside it");
+                derivativeError(*n,std::string("under a per-pixel condition, ")+(inLoop?"in a loop":"reading values its branches change"),
+                    "compute it before the "+std::string(s.kind==StmtKind::If?"if":"switch"));
             }
         }
         if(!ok)return;
@@ -2358,9 +2333,8 @@ private:
         const bool isMain=&f==program.main;
         computeVarying(f,!isMain);
         if(returnsAggregate(f))
-            error(f.loc,"array-return","function "+quotedName(f)+": it computes derivatives and returns "+quoted(toString(f.returnType))+
-                ", which SkSL functions cannot return; the transpiler returns such values through an out parameter only in functions without derivatives",
-                "return the value through an out parameter");
+            error(f.loc,"array-return","function "+quotedName(f)+": returns "+quoted(toString(f.returnType))+" and uses derivatives",
+                "return it through an out parameter");
         if(isMain)mainSignature();
         else {
             std::string params;
@@ -2387,7 +2361,7 @@ private:
                 returns=returns||info(*body[i]).returns;
                 if(const Stmt* sw=switchWithReturn(*body[i]))
                     error(sw->loc,"derivative-control","return inside a switch in "+quotedName(f)+" after a derivative",
-                        "set a result variable in the switch and return it after the switch");
+                        "return after the switch");
             }
             for(int lane=1;lane<4;++lane) {
                 if(returns)line("bool "+done(lane)+" = false;");
@@ -2467,9 +2441,8 @@ private:
                     if(sema::keywordType(g.type.name,t) && t.isMatrix())matrices=true;
                 }
                 if(row && matrices)
-                    error(d->loc,"matrix-layout","row_major uniform block "+quoted(d->block->name)+": SkSL runtime shaders have no uniform blocks, and the "
-                        "application sets the flattened matrix uniforms in column-major order, so data laid out row by row would arrive transposed",
-                        "remove row_major and upload the matrices column by column");
+                    error(d->loc,"matrix-layout","row_major uniform block "+quoted(d->block->name),
+                        "remove row_major; upload column-major");
             }
             if(d->kind==DeclKind::Variable) {
                 for(const auto& v:d->declarators) {
@@ -2522,7 +2495,7 @@ private:
             const std::string name=fresh("iResolution");
             line("uniform float2 "+name+";");
             resolution=name;
-            resolutionNote=" (declared by the SkSL, since the shader has no iResolution uniform)";
+            resolutionNote=" (added)";
         }
         return resolutionNote;
     }
@@ -2532,10 +2505,9 @@ private:
         const std::string declared=resolutionUniform();
         const int rows=s.type.rows;
         const std::string resolutionUniform=resolution.substr(0,resolution.find('.'));
-        sink.warning(s.loc,"software.input","input "+quoted(s.name)+" is the texture coordinate: SkSL runtime shaders have no inputs, so it is computed as "
-            "the coordinate of the pixel divided by "+quoted(resolution)+declared+", which gives UV from 0 to 1 across the drawn area"+
-            (rows>2?std::string(", with z = 0")+(rows>3?" and w = 1":""):std::string()),
-            "set the uniform "+quoted(resolutionUniform)+" to the width and height of the drawn area");
+        sink.warning(s.loc,"software.input","input "+quoted(s.name)+" = coord / "+quoted(resolution)+declared+
+            (rows>2?std::string(", z = 0")+(rows>3?", w = 1":""):std::string()),
+            "set "+quoted(resolutionUniform)+" to the drawn area size");
         sink.hint(symbolName(&s,0)+" = ");
     }
     void textureCoordinatePrologue(const Symbol& s) {

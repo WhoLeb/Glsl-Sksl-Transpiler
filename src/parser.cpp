@@ -112,12 +112,12 @@ private:
             "a type can only appear in an expression as a constructor call","syntax.expected-token");
     }
     [[noreturn]] GLSL_SKSL_COLD void misplacedLabel(const Token& x) {
-        fail(x,"Invalid '"+x.text+"' label: it must appear directly in the body of a switch statement",
-            "labels cannot be outside a switch or nested inside other blocks or statements within it","syntax.misplaced-label");
+        fail(x,"Invalid '"+x.text+"' label: must be directly in a switch body",
+            "move it into the switch","syntax.misplaced-label");
     }
     GLSL_SKSL_COLD void invalidAssignment(const Token& op) {
-        report(op,"Invalid assignment: the left side of '"+op.text+"' is not a variable, element, field or swizzle",
-            "assign to a variable, array element, struct field or swizzle","syntax.invalid-assignment");
+        report(op,"Invalid assignment: the left side of '"+op.text+"' cannot be written",
+            "assign to a variable, element, field or swizzle","syntax.invalid-assignment");
     }
     [[noreturn]] GLSL_SKSL_COLD void tooTall(Loc at) {
         fail(at,"Unsupported expression: it nests more than "+std::to_string(kMaxHeight)+" operations deep",
@@ -327,7 +327,7 @@ private:
             if(global)
                 fail(peek(),"Invalid syntax: expected a declaration at global scope, found "+describe(peek()),
                     peek().kind==TokenKind::Identifier && !q.empty()?"'"+peek().text+"' is not a declared type":
-                    "statements and expressions must be inside a function such as main()","syntax.global-statement");
+                    "move it into a function","syntax.global-statement");
             fail(peek(),"Invalid syntax: expected a type, found "+describe(peek()),{},"syntax.expected-type");
         }
         TypeSpec type=typeSpecifier(true);
@@ -555,9 +555,9 @@ private:
         const StmtKind kind=x.text=="break"?StmtKind::Break:x.text=="continue"?StmtKind::Continue:x.text=="discard"?StmtKind::Discard:StmtKind::Return;
         auto s=std::make_unique<Stmt>(kind,x.loc);
         if(kind==StmtKind::Break && !loops && !switches)
-            report(x,"Invalid 'break': it must be inside a loop or switch statement","remove it or restructure the control flow","syntax.misplaced-jump");
+            report(x,"Invalid 'break' outside a loop or switch","remove it","syntax.misplaced-jump");
         if(kind==StmtKind::Continue && !loops)
-            report(x,"Invalid 'continue': it must be inside a loop","remove it or restructure the control flow","syntax.misplaced-jump");
+            report(x,"Invalid 'continue' outside a loop","remove it","syntax.misplaced-jump");
         if(kind==StmtKind::Return && !is(";"))s->expr=expression();
         expect(";","after '"+x.text+"'");
         return s;

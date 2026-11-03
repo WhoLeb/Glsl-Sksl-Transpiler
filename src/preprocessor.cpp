@@ -71,7 +71,7 @@ private:
         if(tok->kind==TokenKind::Identifier) {
             if(tok->text=="defined")fail(tok->loc,"Invalid #if expression: 'defined' produced by macro expansion");
             else fail(tok->loc,"Invalid #if expression: '"+tok->text+"' is not a defined macro",
-                "GLSL ES does not treat undefined identifiers as 0 in #if; test them with defined("+tok->text+")");
+                "test it with defined("+tok->text+")");
             return 0;
         }
         fail(tok->loc,"Invalid #if expression: unexpected '"+tok->text+"'");
@@ -170,7 +170,7 @@ private:
     }
     void unexpected(const Line& l, std::size_t from, const std::string& directive) {
         if(l.tokens.size()>from)
-            sink.error(l.tokens[from].loc,"pp.extra-tokens","Invalid #"+directive+": unexpected '"+l.tokens[from].text+"' after the directive","remove the extra text or turn it into a comment");
+            sink.error(l.tokens[from].loc,"pp.extra-tokens","Invalid #"+directive+": unexpected '"+l.tokens[from].text+"' after the directive","remove it");
     }
 
     void version(const Line& l) {
@@ -194,8 +194,8 @@ private:
             else sink.error(t[3].loc,"version.invalid-profile","Invalid #version profile '"+profile+"': expected 'es'","write #version "+number+" es");
         } else if(desktop.count(number)) {
             out.version=320;
-            sink.error(loc,"version.desktop","Unsupported #version "+spell(t,2)+": desktop GLSL is not supported; only GLSL ES 1.00, 3.00, 3.10 and 3.20 are",
-                "port the shader to GLSL ES and declare #version 300 es");
+            sink.error(loc,"version.desktop","Unsupported #version "+spell(t,2)+": desktop GLSL",
+                "port it to GLSL ES (#version 300 es)");
         } else sink.error(t[2].loc,"version.invalid","Invalid #version "+number+": not a GLSL ES version","use 100, 300 es, 310 es or 320 es");
     }
 
@@ -224,7 +224,7 @@ private:
         }
         if(n.find("__")!=std::string::npos) {
             if(out.version<300){sink.error(name.loc,"pp.reserved-macro","Invalid #"+directive+": macro names containing '__' are reserved in GLSL ES 1.00","rename the macro");return false;}
-            sink.warning(name.loc,"pp.reserved-macro","macro name '"+n+"' contains '__', which GLSL ES reserves for the implementation","rename the macro");
+            sink.warning(name.loc,"pp.reserved-macro","macro name '"+n+"' contains reserved '__'","rename the macro");
         }
         return true;
     }
@@ -252,8 +252,8 @@ private:
         else if(d=="pragma")out.pragmas.push_back(spell(t,2));
         else if(d=="extension")extension(l);
         else if(d=="version")
-            sink.error(t[0].loc,"version.misplaced","Invalid #version: it must be the first line of the shader and appear only once",
-                "move #version to the very first line; only comments and whitespace may precede it");
+            sink.error(t[0].loc,"version.misplaced","Invalid #version: must be the first line, once",
+                "move it to the first line");
         else if(d=="line")line(l);
         else sink.error(t[1].loc,"pp.unknown-directive","Invalid preprocessor directive '#"+t[1].text+"'");
     }
@@ -385,9 +385,8 @@ private:
         }
         if((name=="GL_OES_standard_derivatives"||name=="GL_EXT_shader_texture_lod") && out.version==100)return;
         if(behavior=="require")
-            sink.error(t[2].loc,"pp.extension","Unsupported extension '"+name+"': it is not available in SkSL runtime shaders","remove the dependency on the extension");
-        else sink.warning(t[2].loc,"pp.extension","extension '"+name+"' is not available in SkSL runtime shaders; it stays disabled",
-            "features from this extension are rejected");
+            sink.error(t[2].loc,"pp.extension","Unsupported extension '"+name+"'","remove it");
+        else sink.warning(t[2].loc,"pp.extension","extension '"+name+"' stays disabled","");
     }
 
     void flush() {
@@ -437,7 +436,7 @@ private:
                 }
                 if(!closed) {
                     sink.error(t.loc,"pp.macro-arguments","Invalid use of macro '"+t.text+"': unterminated argument list",
-                        "close the argument list; preprocessor directives cannot appear inside macro arguments");
+                        "close the argument list first");
                     return result;
                 }
                 const std::size_t given=m.params.empty() && args.size()==1 && args[0].empty()?0:args.size();

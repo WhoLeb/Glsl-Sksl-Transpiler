@@ -21,7 +21,7 @@ std::string describe(const std::string& text, std::size_t b, std::size_t e) {
         code=lead&(0x7Fu>>length);
         for(std::size_t i=b+1;i<e;++i)code=(code<<6)|(byte(i)&0x3Fu);
         std::snprintf(hex,sizeof hex,"U+%04X",code);
-        if(code==0xFEFF)return "Invalid character U+FEFF (UTF-8 byte order mark): GLSL source must be plain ASCII outside comments";
+        if(code==0xFEFF)return "Invalid character U+FEFF (byte order mark)";
         return std::string("Invalid character ")+hex+" '"+text.substr(b,e-b)+"': non-ASCII characters are only allowed in comments";
     }
     std::snprintf(hex,sizeof hex,"0x%02X",lead);

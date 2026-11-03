@@ -47,12 +47,12 @@ auto byLine = r.diagnosticsByLine();   // std::map<GLSL line, diagnostics>
 Each `Diagnostic` carries the severity, a stable `code` (for example `unsupported.loop`), the message, a `suggestion`, the GLSL line and column with the text of the GLSL line, and the SkSL line and column with the text of the SkSL line (0 and empty when no SkSL corresponds). Every problem is reported in one pass (the parser stops after 25), sorted by GLSL position. `formatDiagnostic` renders:
 
 ```
-11:5: error: Unsupported for loop: SkSL runtime shaders only allow loops with a constant range; the bound 'n' is not a constant expression, and uniform 'n' has no @minmax annotation that gives its range [unsupported.loop]
+11:5: error: Unsupported for loop: unknown iteration count: no @minmax on 'n' [unsupported.loop]
   GLSL 11 |     for (int j = 0; j < n; j++) s += 2.0;
           |     ^
   SkSL 47 |     for (int j = 0; j < n; j++) {
           |     ^
-  suggestion: give the uniform its range of values with an annotation comment: 'uniform int n; // @minmax{0, 32} @init{0}'
+  suggestion: annotate it: 'uniform int n; // @minmax{0, 32} @init{0}'
 ```
 
 Invalid GLSL shows `SkSL - | (no SkSL generated)` instead.

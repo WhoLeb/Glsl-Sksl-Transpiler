@@ -128,9 +128,8 @@ Result transpile(const std::string& source) noexcept {
                     auto retyped=sema::analyze(*again.unit,retry,name);
                     const auto after=invalidErrors(retry);
                     if(after.size()<before.size() && std::includes(before.begin(),before.end(),after.begin(),after.end())) {
-                        retry.warning(at,"sema.input-vec2","input '"+name+"' is a "+type+", but the shader uses it as a vec2, which GLSL rejects; it is "
-                            "treated as a vec2 holding the texture coordinate (its x and y)",
-                            "declare it 'in vec2 "+name+"', or write '"+name+".xy' where a vec2 is needed");
+                        retry.warning(at,"sema.input-vec2","input '"+name+"' ("+type+") used as a vec2; treated as a vec2",
+                            "declare it 'in vec2 "+name+"'");
                         sink=std::move(retry);
                         parsed=std::move(again);
                         program=std::move(retyped);

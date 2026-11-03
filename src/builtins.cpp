@@ -250,8 +250,8 @@ std::string reason(const std::string& name) {
         "unpackSnorm2x16","packUnorm2x16","unpackUnorm2x16","packHalf2x16","unpackHalf2x16","packUnorm4x8","packSnorm4x8",
         "unpackUnorm4x8","unpackSnorm4x8","uaddCarry","usubBorrow","umulExtended","imulExtended","bitfieldExtract",
         "bitfieldInsert","bitfieldReverse","bitCount","findLSB","findMSB","frexp","ldexp"};
-    if(bits.count(name))return "SkSL runtime shaders have no bit-level access to numbers";
-    if(name=="isnan"||name=="isinf")return "SkSL does not guarantee IEEE NaN and infinity behaviour, so the test cannot be reproduced";
+    if(bits.count(name))return "no bit-level access in SkSL";
+    if(name=="isnan"||name=="isinf")return "NaN and infinity tests are unreliable in SkSL";
     return {};
 }
 
