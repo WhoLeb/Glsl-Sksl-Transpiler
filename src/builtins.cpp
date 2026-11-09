@@ -246,7 +246,7 @@ int lastVersion(const std::string& name) {
 }
 
 std::string reason(const std::string& name) {
-    static const std::set<std::string> bits={"floatBitsToInt","floatBitsToUint","intBitsToFloat","uintBitsToFloat","packSnorm2x16",
+    static const std::set<std::string> bits={"packSnorm2x16",
         "unpackSnorm2x16","packUnorm2x16","unpackUnorm2x16","packHalf2x16","unpackHalf2x16","packUnorm4x8","packSnorm4x8",
         "unpackUnorm4x8","unpackSnorm4x8","uaddCarry","usubBorrow","umulExtended","imulExtended","bitfieldExtract",
         "bitfieldInsert","bitfieldReverse","bitCount","findLSB","findMSB","frexp","ldexp"};

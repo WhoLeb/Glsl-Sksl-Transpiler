@@ -1,4 +1,6 @@
 #include "helpers.hpp"
+#include <charconv>
+#include <cmath>
 namespace glsl_sksl {
 using sema::Type;
 
@@ -8,7 +10,7 @@ std::string skslType(const Type& t) {
     case Type::Void: s="void"; break;
     case Type::Bool: s="bool"; break;
     case Type::Int: s="int"; break;
-    case Type::Uint: s="uint"; break;
+    case Type::Uint: s="int"; break;   // the same 32 bits; operators that differ are generated
     case Type::Float: s="float"; break;
     case Type::Struct: s=t.structDef?t.structDef->name:""; break;
     case Type::Opaque: s=t.opaque=="sampler2D"?"shader":t.opaque; break;   // 2D textures become child shaders
@@ -25,8 +27,10 @@ std::string skslType(const Type& t) {
 namespace {
 const char* const kComponents[]={"x","y","z","w"};
 const std::set<std::string> kAlways={"sinh","cosh","tanh","asinh","acosh","atanh","trunc","round","roundEven","modf","fma",
-    "determinant","transpose","outerProduct"};
+    "determinant","transpose","outerProduct","floatBitsToInt","floatBitsToUint","intBitsToFloat","uintBitsToFloat"};
 const std::set<std::string> kIntegerOnly={"abs","sign","min","max","clamp"};
+// Built-ins that compare, which an int would do by the sign of the bits of a uint.
+const std::set<std::string> kUnsigned={"min","max","clamp","lessThan","lessThanEqual","greaterThan","greaterThanEqual"};
 
 // Bodies of the scalar helpers. The hyperbolic functions follow the definitions in section 8.1 of
 // the GLSL ES 3.00 specification, rearranged where the literal formula overflows for large |x|.
@@ -52,6 +56,57 @@ std::string join(const std::vector<std::string>& parts) {
     for(std::size_t i=0;i<parts.size();++i)s+=(i?", ":"")+parts[i];
     return s;
 }
+// 2^exponent as a literal that reads back exactly.
+std::string powerOfTwo(int exponent) {
+    char text[64];
+    const auto end=std::to_chars(text,text+sizeof text,std::ldexp(1.0,exponent),std::chars_format::scientific);
+    return std::string(text,end.ptr);
+}
+// The IEEE 754 fields of a float, computed exactly: multiplying by a power of two only changes the
+// exponent, so the value is scaled to [1, 2) in steps that together reach any exponent. pow, log2
+// and exp2 are not exact. There are no early returns (see the integer operators in the emitter).
+// A NaN gives the canonical NaN, as its payload cannot be read.
+std::string floatToBits(const std::string& fn) {
+    std::string s="int "+fn+"(float x) {\n    float a = abs(x);\n    float o = a;\n    int e = 0;\n";
+    for(int k=64;k>=1;k/=2)
+        s+="    if (a >= "+powerOfTwo(k)+") { a *= "+powerOfTwo(-k)+"; e += "+std::to_string(k)+"; }\n";
+    for(int k=64;k>=1;k/=2)
+        s+="    if (a < "+powerOfTwo(1-k)+") { a *= "+powerOfTwo(k)+"; e -= "+std::to_string(k)+"; }\n";
+    // Starts as a NaN and changes only when a comparison holds, which it never does for a NaN:
+    // Skia rewrites !(o >= 0.0) as o < 0.0, which is false for a NaN too.
+    s+="    int r = 2143289344;\n"
+       "    if (o >= 0.0) { r = int((a - 1.0) * 8388608.0) + (e + 127) * 8388608; }\n"
+       "    if (o < "+powerOfTwo(-126)+") { r = int(o * "+powerOfTwo(126)+" * 8388608.0); }\n"     // subnormal
+       "    if (o > 3.4028234663852886e38) { r = 2139095040; }\n"                                   // infinity
+       "    return x < 0.0 || (x == 0.0 && 1.0 / x < 0.0) ? r - 2147483647 - 1 : r;\n"              // -0 too
+       "}";
+    return s;
+}
+// The other way. An exponent of 255 goes on to overflow, since SkSL has no infinity literal; the
+// difference of two infinities is a NaN.
+std::string bitsToFloat(const std::string& fn) {
+    std::string s="float "+fn+"(int b) {\n"
+        "    int l = b < 0 ? b + 2147483647 + 1 : b;\n"
+        "    int e = l / 8388608;\n"
+        "    int m = l - e * 8388608;\n"
+        "    float v = float(m) / 8388608.0;\n"
+        "    float f = 1.0 + v;\n"
+        "    int n = e - 127;\n";
+    for(int k=64;k>=1;k/=2)
+        s+="    if (n >= "+std::to_string(k)+") { f *= "+powerOfTwo(k)+"; n -= "+std::to_string(k)+"; }\n";
+    for(int k=64;k>=1;k/=2)
+        s+="    if (n <= -"+std::to_string(k)+") { f *= "+powerOfTwo(-k)+"; n += "+std::to_string(k)+"; }\n";
+    s+="    if (e == 0) { f = v * "+powerOfTwo(-126)+"; }\n"
+       "    if (e == 255) { f = f * f; }\n"
+       "    if (e == 255 && m > 0) { f = f - f; }\n"
+       "    return b < 0 ? -f : f;\n"
+       "}";
+    return s;
+}
+// a < b for the bits of two uint values.
+std::string unsignedLess(const std::string& a, const std::string& b) {
+    return "(("+a+" < 0) == ("+b+" < 0) ? "+a+" < "+b+" : "+b+" < 0)";
+}
 // arg.x or arg, for an argument that is a vector or a broadcast scalar.
 std::string component(const std::string& arg, const Type& t, int i) {
     return t.isVector()?arg+"."+kComponents[i]:arg;
@@ -71,6 +126,7 @@ bool BuiltinHelpers::Key::operator<(const Key& o) const {
 bool BuiltinHelpers::needed(const sema::Function& f) {
     if(!f.builtin || f.params.empty())return false;
     if(kAlways.count(f.name))return true;
+    if(f.params[0].type.base==Type::Uint && kUnsigned.count(f.name))return true;
     if(kIntegerOnly.count(f.name))return f.params[0].type.base==Type::Int;
     if(f.name=="mix")return f.params.size()==3 && f.params[2].type.base==Type::Bool;
     return false;
@@ -79,7 +135,8 @@ bool BuiltinHelpers::needed(const sema::Function& f) {
 std::string BuiltinHelpers::use(const sema::Function& f) {
     std::vector<Type> params;
     for(const auto& p:f.params)params.push_back(p.type);
-    return request(f.name,params);
+    // Their own names: int and uint overloads have the same signature in SkSL.
+    return request(params[0].base==Type::Uint && kUnsigned.count(f.name)?"u"+f.name:f.name,params);
 }
 
 std::string BuiltinHelpers::request(const std::string& name, const std::vector<Type>& params) {
@@ -125,6 +182,34 @@ std::string BuiltinHelpers::generate(const std::string& name, const std::vector<
     if(kFloatBodies.count(name)||kIntBodies.count(name)) {
         if(t.isVector())return perComponent(t,{"x"});
         return T+" "+fn+"("+T+" x) { "+(t.base==Type::Int?kIntBodies.at(name):kFloatBodies.at(name))+" }";
+    }
+    if(name=="floatBitsToUint"||name=="floatBitsToInt"||name=="uintBitsToFloat"||name=="intBitsToFloat") {
+        const bool toFloat=t.base!=Type::Float;
+        if(t.isVector())return perComponent(Type::of(toFloat?Type::Float:Type::Int,t.rows),{"x"});
+        if(name=="floatBitsToUint")return floatToBits(fn);
+        if(name=="uintBitsToFloat")return bitsToFloat(fn);
+        // The same bits: only the GLSL type differs.
+        if(name=="floatBitsToInt")return "int "+fn+"(float x) { return "+request("floatBitsToUint",{t})+"(x); }";
+        return "float "+fn+"(int x) { return "+request("uintBitsToFloat",{t})+"(x); }";
+    }
+    if(name=="umin"||name=="umax") {
+        if(t.isVector())return perComponent(t,{"a","b"});
+        return "int "+fn+"(int a, int b) { return "+unsignedLess("a","b")+(name=="umin"?" ? a : b":" ? b : a")+"; }";
+    }
+    if(name=="uclamp") {
+        if(t.isVector())return perComponent(t,{"x","lo","hi"});
+        const std::string min=request("umin",{t,t}), max=request("umax",{t,t});
+        return "int "+fn+"(int x, int lo, int hi) { return "+min+"("+max+"(x, lo), hi); }";
+    }
+    if(name=="ulessThan"||name=="ulessThanEqual"||name=="ugreaterThan"||name=="ugreaterThanEqual") {
+        const std::string B=skslType(Type::of(Type::Bool,t.rows));
+        std::vector<std::string> parts;
+        for(int c=0;c<t.rows;++c) {
+            const std::string a=std::string("a.")+kComponents[c], b=std::string("b.")+kComponents[c];
+            parts.push_back(name=="ulessThan"?unsignedLess(a,b):name=="ugreaterThan"?unsignedLess(b,a):
+                name=="ulessThanEqual"?"!"+unsignedLess(b,a):"!"+unsignedLess(a,b));
+        }
+        return B+" "+fn+"("+T+" a, "+T+" b) { return "+B+"("+join(parts)+"); }";
     }
     if(name=="min"||name=="max") {
         if(t.isVector())return perComponent(t,{"a","b"});

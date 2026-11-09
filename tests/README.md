@@ -87,6 +87,14 @@ where skslc.exe must sit in the same folder as Skia's `sksl_*.sksl` module files
 
 `build\.venv-validation\Scripts\python.exe tests\check_loops.py --transpiler build\glsl-to-sksl.exe` renders `while`, `do-while` and `for` loops that the transpiler lowers to bounded iteration (counter proofs, `while(false)`, `@maxiter` annotations and `for` loops with a separate init, no increment or a step inside the body), including `continue` and conditions with side effects, and compares the rendered pixel with the GLSL result. Requires skia-python from `requirements-validation.txt`; the expected summary is `failures: 0`.
 
+# Unsigned integer check (`check_uint_ops.py`)
+
+`python tests/check_uint_ops.py --transpiler build/glsl-to-sksl.exe` checks uint operators, conversions, built-ins and loops against 32-bit unsigned results with Skia's CPU backend.
+
+# Float bit-cast check (`check_float_bits.py`)
+
+`python tests/check_float_bits.py --transpiler build/glsl-to-sksl.exe` checks floatBitsToInt, floatBitsToUint, intBitsToFloat and uintBitsToFloat against IEEE 754 bits with Skia's CPU backend.
+
 # Online shaders (`fetch_online_shaders.py`, `check_online_shaders.py`)
 
 The unit tests and the corpus cover the cases someone thought of; real shaders find the rest. `python tests/fetch_online_shaders.py` downloads about 3300 single-pass fragment shaders into `build/online-shaders` (not part of the repository; the shaders keep their authors' licenses): the permissively licensed Shadertoy image shaders of the ShaderEval benchmark, a sample spread over a 45000-shader Shadertoy dump (both from Hugging Face), and the GLSL ES 1.00 examples of The Book of Shaders. `--limit N` takes at most N shaders from each source.

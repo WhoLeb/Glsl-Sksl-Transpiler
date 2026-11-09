@@ -198,7 +198,6 @@ void mustReportUnsupported() {
         {P+"uniform float e; void main(){float d=1.; while(d>e){d*=.5;} color=vec4(d);}","unsupported.loop"},
         {P+"void main(){for(int i=0;i<3;++i){i+=1;} color=vec4(1.);}","unsupported.loop"},
         {P+"uniform int n; void main(){float a[3]; color=vec4(a[n]);}","unsupported.dynamic-index"},
-        {P+"void main(){uint u=1u; color=vec4(float(u));}","unsupported.uint"},
         {P+"uniform bool b; void main(){color=vec4(b?1.:0.);}","unsupported.bool-uniform"},
         {P+"layout(location=0) in vec2 uv; layout(location=1) in vec2 other; void main(){color=vec4(uv+other,0.,1.);}","unsupported.input"},
         {P+"void main(){color=vec4(isnan(1.)?1.:0.);}","unsupported.builtin"},
@@ -230,6 +229,8 @@ void details() {
 
     // Reserved identifiers are a warning, not an error.
     CHECK(warns(P+"float a__b; void main(){color=vec4(1.);}","syntax.reserved-name"));
+    // uint converts with a warning; warns() also requires that there is no error.
+    CHECK(warns(P+"void main(){uint u=1u; color=vec4(float(u));}","software.uint"));
 }
 }
 

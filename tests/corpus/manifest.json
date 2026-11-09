@@ -1033,23 +1033,78 @@
   {
     "name": "lit_uint",
     "file": "lit_uint.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
-    "note": "uint not available in the ES2 profile: refuse or lower",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "lit_uint_hex",
     "file": "lit_uint_hex.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "lit_uvec",
     "file": "lit_uvec.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_hash",
+    "file": "lit_uint_hash.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_overloads",
+    "file": "lit_uint_overloads.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_compare",
+    "file": "lit_uint_compare.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_const",
+    "file": "lit_uint_const.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "lit_uint_builtins",
+    "file": "lit_uint_builtins.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_uint_index",
+    "file": "cf_for_uint_index.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_for_uint_across_sign",
+    "file": "cf_for_uint_across_sign.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "cf_while_uint",
+    "file": "cf_while_uint.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -2579,8 +2634,8 @@
   {
     "name": "uniform_uint",
     "file": "uniform_uint.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -3276,8 +3331,8 @@
   {
     "name": "cf_switch_uint_selector",
     "file": "cf_switch_uint_selector.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
@@ -3895,15 +3950,57 @@
   {
     "name": "bi_float_bits",
     "file": "bi_float_bits.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {
     "name": "bi_float_bits_uint",
     "file": "bi_float_bits_uint.frag",
-    "expect": "reject",
-    "diagnostic": "Unsupported",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_vec",
+    "file": "bi_float_bits_vec.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_infinity_const",
+    "file": "bi_float_bits_infinity_const.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_infinity_global",
+    "file": "bi_float_bits_infinity_global.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_infinity_derived",
+    "file": "bi_float_bits_infinity_derived.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_hash",
+    "file": "bi_float_bits_hash.frag",
+    "expect": "accept",
+    "diagnostic": "",
+    "source_valid": true
+  },
+  {
+    "name": "bi_float_bits_const_fold",
+    "file": "bi_float_bits_const_fold.frag",
+    "expect": "accept",
+    "diagnostic": "",
     "source_valid": true
   },
   {

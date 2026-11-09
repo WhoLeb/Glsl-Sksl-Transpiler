@@ -1211,6 +1211,7 @@ private:
     ConstantPtr foldBuiltin(const Function& f, const ast::Expr& e) const {
         static const std::set<std::string> foldable={"abs","sign","min","max","clamp","floor","ceil","trunc"};
         for(const auto& a:e.operands)if(!a->value)return nullptr;
+        if(f.name=="floatBitsToInt"||f.name=="floatBitsToUint"||f.name=="intBitsToFloat"||f.name=="uintBitsToFloat")return foldBitCast(f,e);
         if(!foldable.count(f.name))return foldFloatBuiltin(f,e);
         const Type& t=f.returnType;
         auto arg=[&](std::size_t i,int k)->const Scalar&{const auto& v=e.operands[i]->value->values;return v.size()==1?v[0]:v[static_cast<std::size_t>(k)];};
@@ -1236,6 +1237,22 @@ private:
             out.push_back(r);
         }
         return makeConstant(t,std::move(out));
+    }
+    // A value that is not finite has no SkSL literal, so it is computed at run time instead.
+    ConstantPtr foldBitCast(const Function& f, const ast::Expr& e) const {
+        std::vector<Scalar> out;
+        for(const Scalar& x:e.operands[0]->value->values) {
+            std::uint32_t bits=x.u;
+            if(x.base==Type::Float)std::memcpy(&bits,&x.f,sizeof bits);
+            else if(x.base==Type::Int)bits=static_cast<std::uint32_t>(x.i);
+            if(f.returnType.base==Type::Float) {
+                float v=0;
+                std::memcpy(&v,&bits,sizeof v);
+                if(!std::isfinite(v))return nullptr;
+                out.push_back(Scalar::of(v));
+            } else out.push_back(f.returnType.base==Type::Int?Scalar::of(wrap(bits)):Scalar::ofUint(bits));
+        }
+        return makeConstant(f.returnType,std::move(out));
     }
     // Float built-ins with constant arguments, computed in double and rounded to float, as GLSL
     // compilers fold them. SkSL needs the value where the GLSL is a constant expression (a const
@@ -1601,6 +1618,7 @@ private:
         return a;
     }
     static bool fitsInt(double v){return v==std::floor(v) && v>=INT_MIN && v<=INT_MAX;}
+    static bool fitsUint(double v){return v==std::floor(v) && v>=0 && v<=4294967295.0;}
 
     // '// @filter{nearest|linear} @wrap{repeat|clamp|mirror}' on the line of a sampler uniform, or
     // alone on the line before it: the GL sampler state of a texture the SkSL filters itself.
@@ -1651,8 +1669,11 @@ private:
             for(Symbol* s:targets) {
                 std::string error=a.error;
                 const bool isInt=s->type.base==Type::Int;
-                if(error.empty() && !(s->type.isScalar() && (isInt||s->type.base==Type::Float)))
-                    error="only int and float uniforms can be annotated";
+                const bool isUint=s->type.base==Type::Uint;
+                if(error.empty() && !(s->type.isScalar() && (isInt||isUint||s->type.base==Type::Float)))
+                    error="only int, uint and float uniforms can be annotated";
+                else if(error.empty() && isUint && ((a.hasRange && (!fitsUint(a.minimum)||!fitsUint(a.maximum))) || (a.hasInit && !fitsUint(a.initial))))
+                    error="a uint uniform needs whole numbers from 0";
                 else if(error.empty() && isInt && ((a.hasRange && (!fitsInt(a.minimum)||!fitsInt(a.maximum))) || (a.hasInit && !fitsInt(a.initial))))
                     error="an int uniform needs whole numbers";
                 else if(error.empty() && !s->annotation.empty())
@@ -1742,11 +1763,17 @@ private:
         }
     }
 
+    // SkSL has no uint: the emitter keeps the 32 bits in an int and computes the operators that
+    // depend on the sign in software.
+    void noteUint(Loc at) {
+        if(reportedUint)return;
+        reportedUint=true;
+        sink.warning(at,"software.uint","uint is stored as int","");
+        sink.hint("int");
+    }
+
     bool targetType(const Type& t, Loc at, const std::string& what) {
-        if(t.contains(Type::Uint)) {
-            unsupported(at,"uint",what+": no 'uint' in SkSL","use int");
-            return false;
-        }
+        if(t.contains(Type::Uint))noteUint(at);
         if(nonSquare(t)) {
             unsupported(at,"matrix-shape",what+": SkSL has only square matrices","use a square matrix or vectors");
             return false;
@@ -1782,6 +1809,10 @@ private:
             else if(s.type.base==Type::Struct && s.type.structDef && !s.type.structDef->block)
                 unsupported(s.loc,"struct-uniform",what+": no struct uniforms in SkSL",
                     "declare each member as a uniform");
+            else if(s.type.contains(Type::Uint)) {
+                sink.warning(s.loc,"software.uint","uniform "+quote(s.name)+" is int in SkSL","set it to the same 32 bits");
+                sink.hint("int");
+            }
             break;
         case Storage::Output:
             if(s.location>0)
@@ -1799,7 +1830,7 @@ private:
     }
 
     void targetRoot(ast::Expr& e) {
-        reportedUint=false; reportedMatrix=false;
+        reportedMatrix=false;
         targetExpr(e);
     }
 
@@ -1945,8 +1976,8 @@ private:
         else {
             declarator=&s.init->decl->declarators.front();
             index=declarator->symbol;
-            if(!index || !(index->type.isScalar() && (index->type.base==Type::Int||index->type.base==Type::Float)))
-                problem="the loop index must be int or float";
+            if(!index || !(index->type.isScalar() && (index->type.base==Type::Int||index->type.base==Type::Uint||index->type.base==Type::Float)))
+                problem="the loop index must be int, uint or float";
             else if(!declarator->init)problem="the loop index "+quote(declarator->name)+" is not initialized";
         }
         const std::string name=index?index->name:"i";
@@ -1983,9 +2014,19 @@ private:
                     const double iterations=std::max(0.0,op=="<="||op==">="?std::floor(span)+1:std::ceil(span));
                     if(towards && iterations>kMaxLoopIterations)
                         problem=number(iterations)+" iterations, over the "+number(kMaxLoopIterations)+" limit";
+                    else if(index->type.base==Type::Uint && !signedRange(*first,*last,towards?*first+iterations*step:*first))
+                        problem="the index does not stay on one side of 2^31";
                 }
         }
         return index;
+    }
+
+    // A uint loop index is an int in SkSL, and the for loop compares it as one: that gives the
+    // unsigned result only while the start, the bound and the last value are on one side of 2^31,
+    // and the index does not wrap around.
+    static bool signedRange(double first, double last, double end) {
+        constexpr double half=2147483648.0, top=4294967295.0;
+        return end>=0 && end<=top && (first<half)==(last<half) && (first<half)==(end<half);
     }
 
     // A condition 'i < 16 && t < 2.0' bounds the loop through its comparison of the index: the
@@ -2318,7 +2359,7 @@ private:
             if((x->kind==ExprKind::Postfix||x->kind==ExprKind::Unary) && (x->text=="++"||x->text=="--")){step=x->text=="++"?1:-1;x=x->operands[0].get();}
             if(x->kind!=ExprKind::Name || !x->symbol || x->symbol->storage!=Storage::Local)return nullptr;
             const Type& t=x->symbol->type;
-            return t.isScalar() && (t.base==Type::Int||t.base==Type::Float)?x->symbol:nullptr;
+            return t.isScalar() && (t.base==Type::Int||t.base==Type::Uint||t.base==Type::Float)?x->symbol:nullptr;
         };
         std::string op=c->text;
         double step=0;
@@ -2367,6 +2408,10 @@ private:
         }
         const double span=((up?last->hi:last->lo)-(up?first->lo:first->hi))/step;
         double iterations=std::max(0.0,(op=="<="||op==">=")?std::floor(span)+1:std::ceil(span));
+        if(v->type.base==Type::Uint) {
+            const double end=(up?first->lo:first->hi)+iterations*step;
+            if(end<0 || end>4294967295.0){bound.why=name+" wraps around";return std::nullopt;}
+        }
         if(v->type.base==Type::Float)iterations+=1;      // rounding of the accumulated steps
         if(s.kind==StmtKind::DoWhile)iterations+=1;      // the body runs before the first test
         bound.assumed=first->assumed;
@@ -2429,7 +2474,7 @@ private:
         const std::string& op=condition.text;
         ast::Expr& start=*declarator.init;
         ast::Expr& bound=*condition.operands[1];
-        const bool isInt=index->type.base==Type::Int;
+        const bool isInt=index->type.base!=Type::Float;
         const std::string startClause="the start "+quote(ast::toGlsl(start))+" is not constant";
         const std::string boundClause="the bound "+quote(ast::toGlsl(bound))+" is not constant";
         const std::string what=!start.constant?startClause:boundClause;
@@ -2470,6 +2515,8 @@ private:
             suggestion="narrow the @minmax range";
             return what+"; its range needs "+number(iterations)+" iterations, over the "+number(kMaxLoopIterations)+" limit";
         }
+        if(index->type.base==Type::Uint && !signedRange(first,last,first+iterations*step))
+            return what+" and the index does not stay on one side of 2^31";
         // Guards first, while the original expressions are still in place.
         std::vector<ast::StmtPtr> guards;
         if(!start.constant) {
@@ -2516,7 +2563,7 @@ private:
         unannotatedUniforms(e,missing);
         if(!missing.empty()) {
             const Symbol* u=missing.front();
-            const bool isInt=u->type.base==Type::Int;
+            const bool isInt=u->type.base!=Type::Float;
             suggestion="annotate it: 'uniform "+toString(u->type)+" "+u->name+
                 (isInt?"; // @minmax{0, 32} @init{0}'":"; // @minmax{0.0, 1.0} @init{0.0}'");
             std::string names;
@@ -2611,7 +2658,7 @@ private:
         if(!s.init || s.init->kind!=StmtKind::Declaration || s.init->decl->declarators.size()!=1 || s.decl)return nullptr;
         const ast::Declarator& d=s.init->decl->declarators.front();
         const Symbol* i=d.symbol;
-        if(!i || !d.init || !i->type.isScalar() || (i->type.base!=Type::Int && i->type.base!=Type::Float))return nullptr;
+        if(!i || !d.init || !i->type.isScalar() || (i->type.base!=Type::Int && i->type.base!=Type::Uint && i->type.base!=Type::Float))return nullptr;
         const ast::Expr* c=s.expr.get();
         if(!c || c->kind!=ExprKind::Binary || !relational.count(c->text) || c->operands[0]->kind!=ExprKind::Name || c->operands[0]->symbol!=i)return nullptr;
         const ast::Expr* x=s.step.get();
@@ -2654,11 +2701,18 @@ private:
         if(!e.value || e.value->values.size()!=1)return std::nullopt;
         const Scalar& v=e.value->values[0];
         if(v.base==Type::Int)return static_cast<double>(v.i);
+        if(v.base==Type::Uint)return static_cast<double>(v.u);
         if(v.base==Type::Float)return static_cast<double>(v.f);
         return std::nullopt;
     }
     // `wraps`: the operation can overflow an int (arithmetic, conversion from float).
-    static Range fit(Range r, bool isInt, bool wraps=false) {
+    // Below 0 or above 2^32 - 1 a uint wraps, so the value can then be anything.
+    static Range fitUint(Range r) {
+        constexpr double inf=std::numeric_limits<double>::infinity();
+        if(!(r.lo>=0) || !(r.hi<=4294967295.0)){r.lo=-inf;r.hi=inf;}
+        return r;
+    }
+    static Range fitSigned(Range r, bool isInt, bool wraps=false) {
         constexpr double inf=std::numeric_limits<double>::infinity();
         if(r.lo!=r.lo||r.hi!=r.hi){r.lo=-inf;r.hi=inf;}
         if(isInt) {
@@ -2677,8 +2731,9 @@ private:
     GLSL_SKSL_NOINLINE std::optional<Range> range(const ast::Expr& e, const ast::Stmt* loop) const {
         constexpr double inf=std::numeric_limits<double>::infinity();
         const Type& t=e.type;
-        if(!t.isScalar() || (t.base!=Type::Int && t.base!=Type::Float))return std::nullopt;
-        const bool isInt=t.base==Type::Int;
+        if(!t.isScalar() || (t.base!=Type::Int && t.base!=Type::Uint && t.base!=Type::Float))return std::nullopt;
+        const bool isInt=t.base!=Type::Float;
+        const auto fit=[&t](Range r, bool integer, bool wraps=false){return t.base==Type::Uint?fitUint(std::move(r)):fitSigned(std::move(r),integer,wraps);};
         if(e.constant) {
             if(const auto v=scalarValue(e))return Range{*v,*v,{}};
             return std::nullopt;
@@ -2734,6 +2789,7 @@ private:
                 if(!a)return std::nullopt;
                 args.push_back(std::move(*a));
             }
+            if(t.base==Type::Uint)for(auto& a:args)a.lo=std::max(a.lo,0.0);   // whatever its value, a uint is not negative
             Range r;
             for(const auto& a:args)join(r,a);
             const std::string& f=e.text;
@@ -2779,9 +2835,13 @@ private:
     // Syntax tree nodes for loop guards, with the annotations the semantic pass would give them.
     static ast::ExprPtr literal(const Type& type, double v, Loc at) {
         const bool isInt=type.base==Type::Int;
-        auto e=std::make_unique<ast::Expr>(isInt?ExprKind::IntLiteral:ExprKind::FloatLiteral,at);
+        auto e=std::make_unique<ast::Expr>(isInt?ExprKind::IntLiteral:type.base==Type::Uint?ExprKind::UintLiteral:ExprKind::FloatLiteral,at);
         e->type=Type::of(type.base); e->constant=true;
-        if(isInt) {
+        if(type.base==Type::Uint) {
+            const auto u=static_cast<std::uint32_t>(v);
+            e->intValue=u; e->text=std::to_string(u);
+            e->value=makeConstant(e->type,{Scalar::ofUint(u)});
+        } else if(isInt) {
             const auto i=static_cast<std::int32_t>(v);
             e->intValue=static_cast<std::uint32_t>(i); e->text=std::to_string(i);
             e->value=makeConstant(e->type,{Scalar::of(i)});
@@ -2881,7 +2941,7 @@ private:
     //    their value through an iteration, and the local cannot be declared outside their loops.
     void constantIndexOf(ast::Expr& e) {
         ast::Expr& index=*e.operands[1];
-        if(const auto r=range(index,nullptr); r && index.type.base==Type::Int && r->lo==r->hi && std::isfinite(r->lo) && r->assumed.empty() && !effects(index)) {
+        if(const auto r=range(index,nullptr); r && index.type.base!=Type::Float && r->lo==r->hi && std::isfinite(r->lo) && r->assumed.empty() && !effects(index)) {
             e.operands[1]=literal(index.type,r->lo,index.loc);
             return;
         }
@@ -2960,10 +3020,7 @@ private:
             reportedMatrix=true;
             unsupported(e.loc,"matrix-shape","expression "+quote(ast::toGlsl(e))+": SkSL has only square matrices");
         }
-        if(!reportedUint && (e.type.contains(Type::Uint)||e.kind==ExprKind::UintLiteral)) {
-            reportedUint=true;
-            unsupported(e.loc,"uint","expression "+quote(ast::toGlsl(e))+": no 'uint' in SkSL","use int");
-        }
+        if(e.type.contains(Type::Uint)||e.kind==ExprKind::UintLiteral)noteUint(e.loc);
         if(e.kind==ExprKind::Name && e.symbol && !e.symbol->unsupported.empty())
             unsupported(e.loc,"builtin","built-in "+quote(e.text)+": "+e.symbol->unsupported);
         if(isFragCoord(e))

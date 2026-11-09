@@ -115,6 +115,7 @@ std::string floatText(float f) {
     if(s.find_first_of(".e")==std::string::npos)s+=".0";
     return s;
 }
+void intText(std::string& out, std::uint64_t raw);
 bool scalarText(const sema::Scalar& v, std::string& out) {
     std::string s;
     switch(v.base) {
@@ -125,6 +126,7 @@ bool scalarText(const sema::Scalar& v, std::string& out) {
     case Type::Int:
         s=v.i==INT32_MIN?"-2147483647 - 1":std::to_string(v.i);
         break;
+    case Type::Uint: intText(out,v.u); return true;
     case Type::Bool: out+=v.b?"true":"false"; return true;
     default: return false;
     }
@@ -355,9 +357,21 @@ private:
     // A function that computes derivatives has one version, which takes all four lanes.
     // Functions that take samplers have a copy per sampler (spec).
     std::string functionName(const sema::Function* f, int lane, const Spec* spec) {
-        const std::string name=spec?spec->name:userFunctionName(f->name);
+        const std::string name=spec?spec->name:overloadName(f);
         return laneFunction(f)?laneName(name,lane):name;
     }
+    // f(int) and f(uint) have the same signature in SkSL: the second to be named gets its own name.
+    std::string overloadName(const sema::Function* f) {
+        const auto known=overloadNames.find(f);
+        if(known!=overloadNames.end())return known->second;
+        const std::string name=userFunctionName(f->name);
+        std::string signature=name;
+        for(const auto& p:f->params)signature+=" "+typeName(p.type)+dims(p.type);
+        const bool first=overloadSignatures.insert(signature).second;
+        return overloadNames[f]=first?name:fresh(name+"_u");
+    }
+    std::map<const sema::Function*,std::string> overloadNames;
+    std::set<std::string> overloadSignatures;
     // GLSL ES 1.00 lets shaders define round, inverse, abs(int), ...: names SkSL gives to its intrinsics.
     // Also struct names, called as constructors.
     std::string userFunctionName(const std::string& name) const {
@@ -663,7 +677,7 @@ private:
         case ExprKind::Unary: if(!folded(o,e) && !integerOperator(o,e,lane))unary(o,e,lane); break;
         case ExprKind::Postfix: expr(o,*e.operands[0],lane,16); o+=e.text; break;
         case ExprKind::Binary:
-            if(folded(o,e)||integerOperator(o,e,lane))break;
+            if(folded(o,e)||integerOperator(o,e,lane)||unsignedComparison(o,e,lane))break;
             if((e.text=="=="||e.text=="!=") && aggregate(e.operands[0]->type)){comparison(o,e,lane);break;}
             expr(o,*e.operands[0],lane,binaryPrecedence(e.text));
             o+=" "+e.text+" ";
@@ -735,6 +749,9 @@ private:
     // does not need, and lets vector constructors take matrices; SkSL requires float3(v.xyz) and
     // the matrix elements.
     GLSL_SKSL_NOINLINE void constructor(std::string& o, const Expr& e, int lane) {
+        if(e.constant && e.value && e.type.isBasic())
+            for(const auto& a:e.operands)
+                if(unsignedConversion(e.type,a->type) && constantText(o,*e.value))return;   // a const initializer takes no calls
         o+=typeName(e.type)+dims(e.type);
         const bool resize=e.type.isMatrix() && e.operands.size()==1 && e.operands[0]->type.isMatrix();
         if(!e.type.isBasic() || resize){arguments(o,e,0,lane);return;}
@@ -748,17 +765,23 @@ private:
                 const int take=std::min(k,remaining);
                 for(int c=0;c<take;++c) {
                     if(c)o+=", ";
-                    expr(o,a,lane,16);
-                    o+="["+std::to_string(c/a.type.rows)+"]["+std::to_string(c%a.type.rows)+"]";
+                    std::string x;
+                    expr(x,a,lane,16);
+                    x+="["+std::to_string(c/a.type.rows)+"]["+std::to_string(c%a.type.rows)+"]";
+                    o+=converted(e,a.type,1,x);
                 }
                 remaining-=take;
             } else if(i+1==e.operands.size() && a.type.isBasic() && !a.type.isMatrix() && k>remaining && remaining>0) {
-                expr(o,a,lane,16);
-                o+='.';
-                o.append(kComponents,static_cast<std::size_t>(remaining));
+                std::string x;
+                expr(x,a,lane,16);
+                x+='.';
+                x.append(kComponents,static_cast<std::size_t>(remaining));
+                o+=converted(e,a.type,remaining,x);
                 remaining=0;
             } else {
-                expr(o,a,lane,2);
+                std::string x;
+                expr(x,a,lane,2);
+                o+=a.type.isMatrix()?x:converted(e,a.type,a.type.rows,x);
                 remaining-=k;
             }
         }
@@ -796,7 +819,9 @@ private:
     // Constant integer remainders and bit operations, which SkSL lacks, are replaced by their value.
     GLSL_SKSL_NOINLINE bool folded(std::string& o, const Expr& e) {
         static const std::set<std::string> lowered={"%","&","|","^","~","<<",">>"};
-        if(!e.constant || !e.value || !lowered.count(e.text))return false;
+        if(!e.constant || !e.value)return false;
+        // All constant uint operations too: they may call generated functions otherwise.
+        if(!lowered.count(e.text) && e.type.base!=Type::Uint && e.operands[0]->type.base!=Type::Uint)return false;
         return constantText(o,*e.value);
     }
     bool constantText(std::string& o, const sema::Constant& c) const {
@@ -848,7 +873,10 @@ private:
     GLSL_SKSL_NOINLINE bool integerOperator(std::string& o, const Expr& e, int lane) {
         static const std::map<std::string,std::string> ops={{"%","mod"},{"&","and"},{"|","or"},{"^","xor"},{"<<","shl"},{">>","shr"},
             {"%=","mod"},{"&=","and"},{"|=","or"},{"^=","xor"},{"<<=","shl"},{">>=","shr"}};
-        if(e.type.base!=Type::Int || !e.type.isBasic())return false;
+        // uint is stored as int: the bits of + - * and the bit operations are the same, and these differ.
+        static const std::map<std::string,std::string> unsignedOps={{"/","udiv"},{"%","umod"},{">>","ushr"},{"/=","udiv"},{"%=","umod"},{">>=","ushr"}};
+        const bool isUnsigned=e.type.base==Type::Uint;
+        if((e.type.base!=Type::Int && !isUnsigned) || !e.type.isBasic())return false;
         if(e.kind==ExprKind::Unary && e.text=="~") {
             o+="("+(e.type.isScalar()?std::string("-1"):typeName(e.type)+"(-1)")+" - ";
             expr(o,*e.operands[0],lane,binaryPrecedence("-")+1);
@@ -856,14 +884,17 @@ private:
             noteInteger(e);
             return true;
         }
-        const auto it=ops.find(e.text);
-        if(it==ops.end() || (e.kind!=ExprKind::Binary && e.kind!=ExprKind::Assign))return false;
+        const auto& table=isUnsigned && unsignedOps.count(e.text)?unsignedOps:ops;
+        const auto it=table.find(e.text);
+        if(it==table.end() || (e.kind!=ExprKind::Binary && e.kind!=ExprKind::Assign))return false;
         // An index must be built from loop indices and constants with operators, so a remainder
         // by a positive constant there is written with them: a - n * (a / n) is exact for a >= 0,
         // and GLSL leaves the remainder of a negative operand undefined.
+        // An index in range is below 2^31, so a uint index divides as an int (and has to, without calls).
         const Expr& divisor=*e.operands[1];
+        if(e.text=="/" && e.kind==ExprKind::Binary && indexDepth>0)return false;
         if(e.text=="%" && e.kind==ExprKind::Binary && indexDepth>0 && e.type.isScalar() && divisor.value && !divisor.value->values.empty()
-           && divisor.value->values[0].base==Type::Int && divisor.value->values[0].i>0 && !sideEffects(*e.operands[0])) {
+           && positiveInt(divisor.value->values[0]) && !sideEffects(*e.operands[0])) {
             std::string a, n;
             expr(a,*e.operands[0],lane,binaryPrecedence("/"));
             expr(n,divisor,lane,binaryPrecedence("/")+1);
@@ -882,6 +913,61 @@ private:
         noteInteger(e);
         return true;
     }
+    static bool positiveInt(const sema::Scalar& v) {
+        return v.base==Type::Int?v.i>0:v.base==Type::Uint && v.u>0 && v.u<=0x7FFFFFFFu;
+    }
+    // Comparisons of uint: when the signs differ, the negative int is the larger uint. The condition
+    // of a for loop keeps its form: the semantic pass checked that it compares as an int.
+    GLSL_SKSL_NOINLINE bool unsignedComparison(std::string& o, const Expr& e, int lane) {
+        static const std::map<std::string,std::pair<const char*,const char*>> ops={
+            {"<",{"ult","b < 0"}},{"<=",{"ule","b < 0"}},{">",{"ugt","a < 0"}},{">=",{"uge","a < 0"}}};
+        const auto it=ops.find(e.text);
+        if(it==ops.end() || indexDepth>0 || e.operands[0]->type!=Type::of(Type::Uint))return false;
+        const std::string name=integerName(it->second.first);
+        if(integerDefined.insert(it->second.first).second)
+            integerDefinitionsText+="bool "+name+"(int a, int b) { return (a < 0) == (b < 0) ? a "+e.text+" b : "+it->second.second+"; }\n";
+        o+=name+"("+expr(*e.operands[0],lane,2)+", "+expr(*e.operands[1],lane,2)+")";
+        noteInteger(e);
+        return true;
+    }
+    // float(u) and uint(f) for values from 2^31; int(u), uint(i), uint(b) and bool(u) keep the bits.
+    static const char* unsignedConversion(const Type& to, const Type& from) {
+        if(to.base==Type::Float && from.base==Type::Uint)return "utof";
+        if(to.base==Type::Uint && from.base==Type::Float)return "ftou";
+        return nullptr;
+    }
+    std::string converted(const Expr& e, const Type& from, int rows, const std::string& text) {
+        const char* op=unsignedConversion(e.type,from);
+        if(!op)return text;
+        const std::string name=conversionHelper(op,rows);
+        replaced(e,"uint","conversion "+quoted(e)+" computed in software","",name+"(");
+        return name+"("+text+")";
+    }
+    std::string conversionHelper(const std::string& op, int rows) {
+        const std::string name=integerName(op);
+        const bool toFloat=op=="utof";
+        if(integerDefined.insert(op+"1").second)
+            integerDefinitionsText+=toFloat
+                // Half the value, with a lost low bit kept in the lowest bit, rounds as the whole value.
+                ?"float "+name+"(int a) {\n"
+                 "    int l = a < 0 ? a + 2147483647 + 1 : a;\n"
+                 "    int h = l / 2 + 1073741824;\n"
+                 "    int k = h - h / 2 * 2;\n"
+                 "    int s = l - l / 2 * 2;\n"
+                 "    return a < 0 ? float(h + (s > k ? 1 : 0)) * 2.0 : float(a);\n"
+                 "}\n"
+                // GLSL leaves values out of range undefined; GPUs clamp them, and NaN gives 0.
+                :"int "+name+"(float a) {\n"
+                 "    return a >= 4294967296.0 ? -1 : a >= 2147483648.0 ? int(a - 2147483648.0) - 2147483647 - 1 : a > 0.0 ? int(a) : 0;\n"
+                 "}\n";
+        if(rows>1 && integerDefined.insert(op+std::to_string(rows)).second) {
+            const std::string n=std::to_string(rows), to=(toFloat?"float":"int")+n, from=(toFloat?"int":"float")+n;
+            std::string parts;
+            for(int i=0;i<rows;++i)parts+=std::string(i?", ":"")+name+"(a."+kComponents[i]+")";
+            integerDefinitionsText+=to+" "+name+"("+from+" a) { return "+to+"("+parts+"); }\n";
+        }
+        return name;
+    }
     void noteInteger(const Expr& e) {
         replaced(e,"operator","operator "+quoted(e.text)+" computed in software","",
             e.text=="~"?"-1 - ":"glsl_");
@@ -899,6 +985,21 @@ private:
             // stops the process. So the functions have no early returns and divide by constants
             // only; the remainder replaces the divisors 0 (undefined in GLSL) and -1 by 1.
             if(op=="mod")d+="int "+scalarName+"(int a, int b) {\n    int d = b == 0 || b == -1 ? 1 : b;\n    return a - d * (a / d);\n}\n";
+            else if(op=="udiv")
+                // Half of the dividend fits in an int; the quotient of that, doubled, is at most
+                // one too small. A divisor from 2^31 goes at most once; dividing by 0 gives all ones.
+                d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int d = b > 0 ? b : 1;\n"
+                   "    int h = a < 0 ? (a + "+low+") / 2 + 1073741824 : a / 2;\n"
+                   "    int q = h / d * 2;\n"
+                   "    int r = a - q * d;\n"
+                   "    q += r < 0 || r >= d ? 1 : 0;\n"
+                   "    return b < 0 ? (a < 0 && a >= b ? 1 : 0) : b == 0 ? -1 : q;\n"
+                   "}\n";
+            else if(op=="umod") {
+                const std::string divide=integerHelper("udiv",1,false);
+                d+="int "+scalarName+"(int a, int b) { return a - "+divide+"(a, b) * b; }\n";
+            }
             else if(op=="and"||op=="or"||op=="xor") {
                 const std::string combine=op=="and"?"u * v":op=="or"?"u + v - u * v":"u + v - 2 * u * v";
                 const std::string sign=op=="and"?"a < 0 && b < 0":op=="or"?"a < 0 || b < 0":"(a < 0) != (b < 0)";
@@ -918,12 +1019,15 @@ private:
                    "    return "+sign+" ? r - 2147483647 - 1 : r;\n"
                    "}\n";
             } else if(op=="shl")
-                // One bit at a time: bit 30 of the low bits becomes the sign bit.
+                // One bit at a time: bit 30 of the low bits becomes the sign bit. GLSL leaves other
+                // counts than 0 to 31 undefined; GPUs use their low 5 bits, and shaders rely on it.
                 d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int n = b - b / 32 * 32;\n"
+                   "    n = n < 0 ? n + 32 : n;\n"
                    "    int x = a < 0 ? a + "+low+" : a;\n"
                    "    bool s = a < 0;\n"
                    "    for (int i = 0; i < 31; i++) {\n"
-                   "        if (i < b) {\n"
+                   "        if (i < n) {\n"
                    "            s = x / 1073741824 == 1;\n"
                    "            x = (x - x / 1073741824 * 1073741824) * 2;\n"
                    "        }\n"
@@ -931,17 +1035,21 @@ private:
                    "    return s ? x - 2147483647 - 1 : x;\n"
                    "}\n";
             else
-                // The low bits shift down; a negative value then loses 2^31 / 2^b.
+                // The low bits shift down; the sign bit of a negative value lands at 2^31 / 2^b,
+                // where it counts negative in >> of an int (the bits above it are all ones) and
+                // positive in >> of a uint.
                 d+="int "+scalarName+"(int a, int b) {\n"
+                   "    int n = b - b / 32 * 32;\n"
+                   "    n = n < 0 ? n + 32 : n;\n"
                    "    int x = a < 0 ? a + "+low+" : a;\n"
                    "    int t = 1073741824;\n"
                    "    for (int i = 0; i < 31; i++) {\n"
-                   "        if (i < b) {\n"
+                   "        if (i < n) {\n"
                    "            x /= 2;\n"
                    "            if (i > 0) { t /= 2; }\n"
                    "        }\n"
                    "    }\n"
-                   "    return b <= 0 ? a : a < 0 ? x - t : x;\n"
+                   "    return n == 0 ? a : a < 0 ? x "+std::string(op=="ushr"?"+":"-")+" t : x;\n"
                    "}\n";
         }
         const std::string T=rows==1?"int":"int"+std::to_string(rows);
@@ -1000,7 +1108,7 @@ private:
         if(e.kind==ExprKind::Index) {
             SamplerRef r=resolveSampler(*e.operands[0],binding);
             const Expr& i=*e.operands[1];
-            if(i.value && !i.value->values.empty())r.element=i.value->values[0].i;
+            if(i.value && !i.value->values.empty())r.element=i.value->values[0].base==Type::Uint?static_cast<int>(i.value->values[0].u):i.value->values[0].i;
             else r.index=&i;
             return r;
         }
@@ -1770,7 +1878,7 @@ private:
     // ------------------------------------------------------------------ statements, one lane
     std::string declarator(const ast::Declarator& v, int lane) {
         const Symbol* s=v.symbol;
-        std::string text=s->constQualified?"const ":"";
+        std::string text=s->constQualified && !computedAtRunTime(v)?"const ":"";
         text+=typeName(s->type)+" "+symbolName(s,lane)+dims(s->type);
         if(v.init) {
             text+=" = ";
@@ -1778,6 +1886,21 @@ private:
         }
         return text;
     }
+    // An infinity from uintBitsToFloat is a GLSL constant with no SkSL literal, so a generated
+    // function computes it, and neither a const variable nor a global initializer can call one:
+    // the variable loses const, and a global is set at the start of main.
+    bool computedAtRunTime(const ast::Declarator& v) {
+        if(!v.init || !callsGenerated(*v.init))return false;
+        runTimeConstants.insert(v.symbol);
+        return true;
+    }
+    bool callsGenerated(const Expr& e) const {
+        if(e.kind==ExprKind::Name && runTimeConstants.count(e.symbol))return true;
+        if(e.kind==ExprKind::Call && e.function && e.function->builtin && !e.value && BuiltinHelpers::needed(*e.function))return true;
+        for(const auto& o:e.operands)if(callsGenerated(*o))return true;
+        return false;
+    }
+    std::set<const Symbol*> runTimeConstants;
     std::string done(int lane) const {return laneName(doneName,lane);}
     bool rewritingReturns(int lane) const {return lane>0 && tailLane==lane;}
 
@@ -1968,7 +2091,13 @@ private:
             }
         } else if(s.init && s.init->expr)expr(h,*s.init->expr,lane,0);
         h+="; ";
-        if(s.expr)expr(h,*s.expr,lane,0);
+        if(s.expr) {
+            // SkSL takes only 'index OP constant' here, and a uint index compares as an int (see signedRange).
+            const bool plain=s.expr->kind==ExprKind::Binary && s.expr->operands[0]->type==Type::of(Type::Uint);
+            if(plain)++indexDepth;
+            expr(h,*s.expr,lane,0);
+            if(plain)--indexDepth;
+        }
         h+="; ";
         if(s.step)expr(h,*s.step,lane,0);
         line(h+") {");
@@ -2458,7 +2587,7 @@ private:
                         // are refused, and keep a declaration so the SkSL shows them.
                         if(s->textureCoordinate)textureCoordinate=s;
                         for(int lane=0;lane<(lanes?4:1);++lane)line(declaration(s->type,symbolName(s,lane))+";");
-                    } else if(s->storage==Storage::Global && v.init && aggregate(s->type)) {
+                    } else if(s->storage==Storage::Global && v.init && (aggregate(s->type)||computedAtRunTime(v))) {
                         for(int lane=0;lane<globalCopies(*s);++lane)line(declaration(s->type,symbolName(s,lane))+";");
                         globalArrays.push_back(&v);
                     } else if(s->storage==Storage::Global) {
