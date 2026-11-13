@@ -68,18 +68,18 @@ for linear in (False, True):
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = textureOffset(tex, gl_FragCoord.xy / vec2(5.0, 3.0), ivec2(1, -1)); }"
 want = np.roll(np.roll(T, -1, axis=1), 1, axis=0)
-check("textureOffset nearest repeat", render(transpile(src), W2, H2, {"texSize": (W2, H2)}, {"tex": child(img)}), want)
+check("textureOffset nearest repeat", render(transpile(src), W2, H2, {"tex_textureResolution": (W2, H2)}, {"tex": child(img)}), want)
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = vec4(vec2(textureSize(tex, 0)), vec2(textureSize(tex, 1))) / 10.0; }"
-check("textureSize levels 0 and 1", render(transpile(src), 1, 1, {"texSize": (W2, H2)}, {"tex": child(img)})[0, 0], np.array([.5, .3, .2, .1], np.float32))
+check("textureSize levels 0 and 1", render(transpile(src), 1, 1, {"tex_textureResolution": (W2, H2)}, {"tex": child(img)})[0, 0], np.array([.5, .3, .2, .1], np.float32))
 
 src = H + "uniform sampler2D tex;\nvoid main(){ color = vec4(textureLod(tex, gl_FragCoord.xy / vec2(5.0, 3.0), 3.0).rgb, 1.0) + textureGrad(tex, vec2(0.5), vec2(1.0), vec2(1.0)) * 0.0; }"
-check("textureLod/Grad sample base level", render(transpile(src), W2, H2, {"texSize": (W2, H2)}, {"tex": child(img)}), T)
+check("textureLod/Grad sample base level", render(transpile(src), W2, H2, {"tex_textureResolution": (W2, H2)}, {"tex": child(img)}), T)
 
 GW, GH = 13, 7
 for comp in range(4):
     src = H + f"uniform sampler2D tex;\nvoid main(){{ vec2 uv = (gl_FragCoord.xy * vec2(0.73, 0.61) - 0.2) / vec2(5.0, 3.0); color = textureGatherOffset(tex, uv, ivec2(-1, 2), {comp}); }}"
-    got = render(transpile(src), GW, GH, {"texSize": (W2, H2)}, {"tex": child(img)})
+    got = render(transpile(src), GW, GH, {"tex_textureResolution": (W2, H2)}, {"tex": child(img)})
     want = np.zeros((GH, GW, 4), np.float32)
     for y in range(GH):
         for x in range(GW):
@@ -97,7 +97,7 @@ vec4 pick(sampler2D s, vec2 uv) { return texture(s, uv); }
 void main(){ vec2 uv = gl_FragCoord.xy / vec2(5.0, 3.0); color = texture(ts[which], uv) * 0.5 + pick(ts[1 - which], uv) * 0.0 + pick(ts[0], uv) * 0.5; }"""
 sk = transpile(src)
 for which, other in ((0, T), (1, img2.astype(np.float32) / 255)):
-    check(f"sampler array index {which} and sampler parameter", render(sk, W2, H2, {"which": which, "ts_0Size": (W2, H2), "ts_1Size": (W2, H2)}, {"ts_0": child(img), "ts_1": child(img2)}), other * .5 + T * .5, 1e-6)
+    check(f"sampler array index {which} and sampler parameter", render(sk, W2, H2, {"which": which, "ts_0_textureResolution": (W2, H2), "ts_1_textureResolution": (W2, H2)}, {"ts_0": child(img), "ts_1": child(img2)}), other * .5 + T * .5, 1e-6)
 
 # ---------------------------------------------------------------- cube
 F = 4
@@ -117,7 +117,7 @@ CW, CH = 64, 32
 src = H + """uniform samplerCube sky;
 void main(){ float th = gl_FragCoord.x / 64.0 * 6.2831853, ph = gl_FragCoord.y / 32.0 * 3.1415926;
   color = texture(sky, vec3(sin(ph) * cos(th), cos(ph), sin(ph) * sin(th))); }"""
-got = render(transpile(src), CW, CH, {"skySize": (F, F)}, {f"sky_{n}": child(faces[i], skia.TileMode.kClamp) for i, n in enumerate(["px", "nx", "py", "ny", "pz", "nz"])})
+got = render(transpile(src), CW, CH, {"sky_textureResolution": (F, F)}, {f"sky_{n}": child(faces[i], skia.TileMode.kClamp) for i, n in enumerate(["px", "nx", "py", "ny", "pz", "nz"])})
 want = np.zeros_like(got); mask = np.zeros(got.shape[:2], bool)
 for yy in range(CH):
     for xx in range(CW):
@@ -162,7 +162,7 @@ uniform float z;
 void main(){{ color = texture(vol, vec3(gl_FragCoord.xy * vec2(0.11, 0.13) - vec2(0.7, 0.5), z)); }}"""
         sk = transpile(src)
         for z in (-0.37, 0.52, 1.61):
-            got = render(sk, RW, RH, {"z": z, "volSize": (VW, VH, VD)}, {"vol": child(atlas, skia.TileMode.kClamp, linear=True)})
+            got = render(sk, RW, RH, {"z": z, "vol_textureResolution": (VW, VH, VD)}, {"vol": child(atlas, skia.TileMode.kClamp, linear=True)})
             want = np.zeros_like(got); mask = np.ones(got.shape[:2], bool)
             for yy in range(RH):
                 for xx in range(RW):
@@ -180,7 +180,7 @@ uniform float layer;
 void main(){ color = texture(layers, vec3(gl_FragCoord.xy * vec2(0.09, 0.07) - 0.2, layer)); }"""
 sk = transpile(src)
 for layer in (-0.7, 0.49, 0.51, 1.7, 5.0):
-    got = render(sk, RW, RH, {"layer": layer, "layersSize": (LW, LH, LN)}, {"layers": child(lay.reshape(LN * LH, LW, 4), skia.TileMode.kClamp)})
+    got = render(sk, RW, RH, {"layer": layer, "layers_textureResolution": (LW, LH, LN)}, {"layers": child(lay.reshape(LN * LH, LW, 4), skia.TileMode.kClamp)})
     want = np.zeros_like(got)
     k = min(max(int(np.floor(layer + .5)), 0), LN - 1)
     for yy in range(RH):

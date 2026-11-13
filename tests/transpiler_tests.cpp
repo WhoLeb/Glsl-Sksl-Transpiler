@@ -88,12 +88,12 @@ int main(){
         if(tex.textures.size()==4){
             const auto& t0=tex.textures[0];
             check(t0.sampler=="inputTex" && t0.element==-1 && t0.type=="sampler2D");
-            check(t0.children==std::vector<std::string>{"inputTex"} && t0.sizeUniform=="inputTexSize_2");
-            check(tex.source.find("uniform float2 inputTexSize_2;")!=std::string::npos);
+            check(t0.children==std::vector<std::string>{"inputTex"} && t0.sizeUniform=="inputTex_textureResolution");
+            check(tex.source.find("uniform float2 inputTex_textureResolution;")!=std::string::npos);
             check(tex.source.find("uniform float2 inputTexSize;")!=std::string::npos);
             const auto& t1=tex.textures[1];
-            check(t1.sampler=="env" && t1.type=="samplerCube" && t1.children.size()==6 && t1.sizeUniform=="envSize");
-            check(tex.source.find("uniform float2 envSize;")!=std::string::npos);
+            check(t1.sampler=="env" && t1.type=="samplerCube" && t1.children.size()==6 && t1.sizeUniform=="env_textureResolution");
+            check(tex.source.find("uniform float2 env_textureResolution;")!=std::string::npos);
             for(int i=2;i<4;++i){
                 const auto& t=tex.textures[i];
                 // texelFetch alone is read in texels and needs no size uniform.

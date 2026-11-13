@@ -536,7 +536,7 @@ void textures() {
     CHECK(a.ok());
     CHECK(has(a,"software.texture",Severity::Warning));
     CHECK(contains(a.source,"uniform shader t;"));
-    CHECK(contains(a.source,"float4(t.eval(uv * tSize))"));
+    CHECK(contains(a.source,"float4(t.eval(uv * t_textureResolution))"));
 
     Result b=transpile(P+"uniform sampler2D t; void main(){color=textureProj(t,vec3(1.,1.,2.));}");
     CHECK(b.ok());
@@ -546,11 +546,11 @@ void textures() {
     Result c=transpile(P+"uniform sampler2D t; void main(){color=textureLod(t,vec2(.5),0.);}");
     CHECK(c.ok());
     CHECK(has(c,"software.texture",Severity::Warning));
-    CHECK(contains(c.source,"float4(t.eval(float2(.5) * tSize))"));
+    CHECK(contains(c.source,"float4(t.eval(float2(.5) * t_textureResolution))"));
 
     Result d=transpile(P+"uniform sampler2D t; void main(){color=texture(t,vec2(.5),1.);}");
     CHECK(d.ok());
-    CHECK(contains(d.source,"float4(t.eval(float2(.5) * tSize))"));
+    CHECK(contains(d.source,"float4(t.eval(float2(.5) * t_textureResolution))"));
 
     Result e=transpile(P+"uniform sampler2D t; vec4 f(sampler2D s){return texture(s,vec2(.5));} void main(){color=f(t);}");
     CHECK(e.ok());
@@ -570,11 +570,11 @@ void textures() {
 
     Result sz=transpile(P+"uniform sampler2D t; void main(){color=texelFetch(t,ivec2(1),0)+vec4(vec2(textureSize(t,0)),0.,0.);}");
     CHECK(sz.ok());
-    CHECK(contains(sz.source,"uniform float2 tSize;"));
+    CHECK(contains(sz.source,"uniform float2 t_textureResolution;"));
 
     Result g=transpile("#version 100\nprecision mediump float;\nuniform sampler2D t;\nvoid main(){gl_FragColor=texture2D(t,vec2(.5));}");
     CHECK(g.ok());
-    CHECK(contains(g.source,"float4(t.eval(float2(.5) * tSize))"));
+    CHECK(contains(g.source,"float4(t.eval(float2(.5) * t_textureResolution))"));
 
     // texture2D is GLSL ES 1.00 only; in a 3.00 shader it is an undeclared function.
     Result h=transpile(P+"uniform sampler2D t; void main(){color=texture2D(t,vec2(.5));}");

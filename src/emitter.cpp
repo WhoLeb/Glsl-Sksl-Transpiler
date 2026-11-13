@@ -1255,7 +1255,9 @@ private:
     }
     std::string sizeName(const Symbol* u, int element) {
         auto& n=sizeNames[{u,element}];
-        if(n.empty())n=fresh(elementName(u,element)+"Size");
+        // Named after the child shader, in the form the target application binds:
+        // `<child>_textureResolution` (e.g. `inputTex_textureResolution`).
+        if(n.empty())n=fresh(elementName(u,element)+"_textureResolution");
         return n;
     }
     std::string faceName(const Symbol* u, int element, int face) {

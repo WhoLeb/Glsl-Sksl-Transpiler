@@ -32,9 +32,10 @@ struct Texture {
     int element=-1;              // the element of an array of samplers; -1 for a single sampler
     std::string type;            // "sampler2D", "samplerCube", "sampler3D" or "sampler2DArray"
     std::vector<std::string> children;  // its child shaders: one, or six faces for a cube map (+X, -X, +Y, -Y, +Z, -Z)
-    std::string sizeUniform;     // uniform to set to the size in texels: float2 width, height (of a face for a cube
-                                 // map), float3 width, height, depth or layers for 3D and array textures; empty
-                                 // when the shader does not need the size
+    std::string sizeUniform;     // uniform to set to the size in texels, named `<child>_textureResolution`:
+                                 // float2 width, height (of a face for a cube map), float3 width, height,
+                                 // depth or layers for 3D and array textures; empty when the shader does not
+                                 // need the size
 };
 struct Result {
     enum class State {
